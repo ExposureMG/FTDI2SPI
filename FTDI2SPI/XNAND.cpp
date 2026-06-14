@@ -136,6 +136,64 @@ unsigned int XNANDWriteExecute(unsigned int block)
 	if (!XNANDWaitReady(0x1000))
 		return 0x8021;
 
-	return XNANDGetStatus();	
+	return XNANDGetStatus();
 
+}
+
+// ---------------------------------------------------------------------------
+// Fast batched read path (optimization)
+// ---------------------------------------------------------------------------
+
+// Queue SPI clocks with the chip de-selected, to give the NAND time to load a
+// page into the SFC page buffer (tR). This replaces the per-page busy-bit poll,
+// which cost a full USB read round-trip per page. numBytes * 8 clocks are issued
+// at the SPI clock (~0.267 us/byte at 30 MHz). CS is high here, so the dummy
+// bytes are ignored by the flash.
+static void XNANDQueueReadDelay(unsigned int numBytes)
+{
+	if (numBytes == 0)
+		return;
+
+	unsigned int n = numBytes - 1;              // MPSSE length field is (count - 1)
+	AddByteToOutputBuffer((BYTE)0x19, false);   // CLK_DATA_BYTES_OUT, -ve edge, LSB first
+	AddByteToOutputBuffer((BYTE)(n & 0xFF), false);
+	AddByteToOutputBuffer((BYTE)((n >> 8) & 0xFF), false);
+	for (unsigned int i = 0; i < numBytes; i++)
+		AddByteToOutputBuffer((BYTE)0x00, false);
+}
+
+// Read nPages consecutive physical pages in a single USB write + single USB read.
+// Mirrors XNANDReadStart()+XNANDReadProcess() per page, but: status is cleared once
+// for the whole batch, the busy-poll is replaced by an in-stream delay, and all the
+// page commands/reads are queued before a single SendBytesToDevice()/GetDataFromDevice().
+//   wordsPerPage : bytes-per-page / 4 (132 for 0x210 incl. spare, 128 for 0x200 raw)
+//   delayBytes   : page-load delay, see XNANDQueueReadDelay()
+// Keep nPages * wordsPerPage * 4 below the FT2232H RX FIFO (~4 KB).
+void XNANDReadBatch(unsigned char* pData, unsigned int startBlock,
+                    unsigned int nPages, unsigned int wordsPerPage,
+                    unsigned int delayBytes)
+{
+	XNANDClearStatus();          // once per batch, not once per page
+
+	ClearOutputBuffer();
+
+	for (unsigned int p = 0; p < nPages; p++) {
+		unsigned int block = startBlock + p;
+
+		// start read of one physical page into the SFC page buffer
+		XSPIQueueBytes_(0x0C, block << 9);   // set address (queue-only)
+		XSPIWriteBYTE_(0x08, 0x03);          // PHY_PAGE_TO_BUF (queue-only)
+		XNANDQueueReadDelay(delayBytes);     // wait tR in-stream, no USB round-trip
+		XSPIWrite0_(0x0C);                   // reset page-buffer pointer
+
+		// drain the page buffer
+		for (unsigned int w = 0; w < wordsPerPage; w++) {
+			XSPIWrite0_(0x08);               // PAGE_BUF_TO_REG: advance one word
+			XSPIRead_(0x10, pData);          // queue read of the data register
+		}
+	}
+
+	SetAnswerFast();
+	SendBytesToDevice();
+	GetDataFromDevice(nPages * wordsPerPage * 4, pData);
 }

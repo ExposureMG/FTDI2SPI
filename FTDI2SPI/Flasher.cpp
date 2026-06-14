@@ -109,6 +109,13 @@ void FlashDataRead( unsigned char * pData, unsigned int Block, unsigned int Word
 	NandReadCB( pData, Words );
 }
 
+void FlashDataReadBatch( unsigned char * pData, unsigned int Block, unsigned int nPages, unsigned int bytesPerPage )
+{
+	gGlobalStatus = 0;
+
+	XNANDReadBatch( pData, Block, nPages, bytesPerPage / 4, NAND_READ_DELAY_BYTES );
+}
+
 void FlashDataWrite( unsigned char Data[], unsigned int Block, unsigned int Words )
 {
 	unsigned char *pData = Data;

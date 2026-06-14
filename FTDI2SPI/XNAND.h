@@ -14,4 +14,8 @@ extern void XNANDWriteStart(void);
 extern void XNANDWriteProcess(unsigned char Buffer[], unsigned char Words);
 extern unsigned int XNANDWriteExecute(unsigned int block);
 
+extern void XNANDReadBatch(unsigned char* pData, unsigned int startBlock,
+                           unsigned int nPages, unsigned int wordsPerPage,
+                           unsigned int delayBytes);
+
 #endif

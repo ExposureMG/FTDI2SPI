@@ -213,6 +213,18 @@ extern "C"
 
 			start_spi = true;
 			addr_raw = 0;
+#ifdef NAND_FAST_READ
+			for (block_flash = StartBlock; block_flash < block_flash_max; block_flash += NAND_READ_BATCH_PAGES) {
+				if (stop) break;
+
+				unsigned int nPages = block_flash_max - block_flash;
+				if (nPages > NAND_READ_BATCH_PAGES) nPages = NAND_READ_BATCH_PAGES;
+
+				FlashDataReadBatch(&flash_xbox[addr_raw], block_flash, nPages, block_size);
+
+				addr_raw += block_size * nPages;
+			}
+#else
 			for (block_flash = StartBlock; block_flash < block_flash_max; ++block_flash) {
 				if (stop) break;
 
@@ -224,6 +236,7 @@ extern "C"
 
 				addr_raw += block_size;
 			}
+#endif
 
 			if (stop) {
 				closeDevice();

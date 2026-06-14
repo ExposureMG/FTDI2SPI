@@ -4,6 +4,7 @@
 #include "FTCSPI.h"
 #include "FTD2XX.H"
 #include <stdio.h>
+#include "wrapper_spi.h"
 
 #define MAX_NUM_BYTES_USB_WRITE 16384
 
@@ -288,8 +289,8 @@ bool spi_init( void )
 
 }
 
-BYTE byOutputBuffer[65535];
-BYTE dwLowPinsValue = 0; 
+BYTE byOutputBuffer[OUTPUT_BUFFER_SIZE];
+BYTE dwLowPinsValue = 0;
 DWORD dwNumBytesToSend = 0; // Index to the output buffer
 DWORD dwNumBytesSent = 0; // Count of actual bytes sent - used with FT_Write
 DWORD dwNumBytesToRead = 0; // Number of bytes available to read
@@ -344,7 +345,11 @@ void AddByteToOutputBuffer( BYTE DataByte, bool bClearOutputBuffer )
 	if( bClearOutputBuffer )
 		dwNumBytesToSend = 0;
 
-	byOutputBuffer[dwNumBytesToSend++] = DataByte;
+	// Guard the (previously unchecked) staging buffer. With a correctly sized
+	// OUTPUT_BUFFER_SIZE this never trips; it turns a batch sized too large for
+	// the buffer into a dropped byte instead of a heap overrun.
+	if( dwNumBytesToSend < OUTPUT_BUFFER_SIZE )
+		byOutputBuffer[dwNumBytesToSend++] = DataByte;
 }
 
 void SetAnswerFast( void )
