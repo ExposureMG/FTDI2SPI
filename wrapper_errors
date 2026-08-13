@@ -1,0 +1,17 @@
+/home/e3xp0/Projects/FTDI2SPI/src/wrapper_spi.cpp: In function ‘bool spi_init()’:
+/home/e3xp0/Projects/FTDI2SPI/src/wrapper_spi.cpp:108:11: error: ‘strcpy_s’ was not declared in this scope; did you mean ‘strcpy’?
+  108 |           strcpy_s(szDeviceDetails, "Type = ");
+      |           ^~~~~~~~
+      |           strcpy
+/home/e3xp0/Projects/FTDI2SPI/src/wrapper_spi.cpp:111:13: error: ‘strcat_s’ was not declared in this scope; did you mean ‘strcat’?
+  111 |             strcat_s(szDeviceDetails, "FT4232H");
+      |             ^~~~~~~~
+      |             strcat
+/home/e3xp0/Projects/FTDI2SPI/src/wrapper_spi.cpp:113:13: error: ‘strcat_s’ was not declared in this scope; did you mean ‘strcat’?
+  113 |             strcat_s(szDeviceDetails, "FT2232H");
+      |             ^~~~~~~~
+      |             strcat
+/home/e3xp0/Projects/FTDI2SPI/src/wrapper_spi.cpp:115:11: error: ‘strcat_s’ was not declared in this scope; did you mean ‘strcat’?
+  115 |           strcat_s(szDeviceDetails, ", Name = ");
+      |           ^~~~~~~~
+      |           strcat

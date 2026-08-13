@@ -6,7 +6,6 @@
 #include "wrapper_spi.h"
 #include <string>
 #include <sys/stat.h>
-#include <windows.h>
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
@@ -425,10 +424,6 @@ __declspec(dllexport) void spiStop() {
   if (start_spi)
     stop = true;
 }
-__declspec(dllexport) bool FTDI_INIT(int clockHz) {
-  return FTDI_AutoInitialize(clockHz);
-}
-__declspec(dllexport) void FTDI_DEINIT_IMMEDIATELY() { FTDI_DEINIT(); }
 }
 
 int main() {

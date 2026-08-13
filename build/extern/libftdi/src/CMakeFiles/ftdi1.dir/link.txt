@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC -O2 -g -DNDEBUG -shared -Wl,--dependency-file=CMakeFiles/ftdi1.dir/link.d -Wl,-soname,libftdi1.so.2 -o libftdi1.so.2.5.0 CMakeFiles/ftdi1.dir/ftdi.c.o CMakeFiles/ftdi1.dir/ftdi_stream.c.o  ../../libusb/libusb-1.0.a -ldl
