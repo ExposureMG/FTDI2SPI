@@ -91,35 +91,4 @@ CMakeFiles/FTDI2SPI.dir/src/XeMMC.cpp.o: \
  /usr/include/bits/getopt_core.h /usr/include/bits/unistd_ext.h \
  /usr/include/linux/close_range.h \
  /home/e3xp0/Projects/FTDI2SPI/include/XSPI.h \
- /home/e3xp0/Projects/FTDI2SPI/include/synchapi-shim.h \
- /usr/include/c++/16/condition_variable \
- /usr/include/c++/16/x86_64-pc-linux-gnu/bits/error_constants.h \
- /usr/include/c++/16/bits/std_mutex.h \
- /usr/include/c++/16/bits/functexcept.h \
- /usr/include/c++/16/bits/exception_defines.h \
- /usr/include/c++/16/bits/unique_lock.h \
- /usr/include/c++/16/bits/alloc_traits.h \
- /usr/include/c++/16/bits/stl_construct.h /usr/include/c++/16/new \
- /usr/include/c++/16/bits/exception.h \
- /usr/include/c++/16/bits/new_except.h \
- /usr/include/c++/16/bits/stl_iterator_base_types.h \
- /usr/include/c++/16/bits/stl_iterator_base_funcs.h \
- /usr/include/c++/16/bits/concept_check.h \
- /usr/include/c++/16/bits/ptr_traits.h \
- /usr/include/c++/16/bits/allocator.h \
- /usr/include/c++/16/x86_64-pc-linux-gnu/bits/c++allocator.h \
- /usr/include/c++/16/bits/new_allocator.h \
- /usr/include/c++/16/bits/new_throw.h \
- /usr/include/c++/16/bits/stl_iterator.h \
- /usr/include/c++/16/bits/shared_ptr.h \
- /usr/include/c++/16/bits/shared_ptr_base.h /usr/include/c++/16/typeinfo \
- /usr/include/c++/16/bits/allocated_ptr.h \
- /usr/include/c++/16/ext/aligned_buffer.h \
- /usr/include/c++/16/ext/atomicity.h \
- /usr/include/c++/16/x86_64-pc-linux-gnu/bits/atomic_word.h \
- /usr/include/sys/single_threaded.h /usr/include/c++/16/ext/concurrence.h \
- /usr/include/c++/16/exception /usr/include/c++/16/bits/exception_ptr.h \
- /usr/include/c++/16/bits/cxxabi_init_exception.h \
- /usr/include/c++/16/bits/nested_exception.h \
- /usr/include/c++/16/bits/cxxabi_forced.h /usr/include/c++/16/mutex \
  /home/e3xp0/Projects/FTDI2SPI/include/wrapper_spi.h

@@ -5,8 +5,7 @@
 		"/home/e3xp0/Projects/FTDI2SPI/build/extern/cmake_install.cmake",
 		"/home/e3xp0/Projects/FTDI2SPI/build/extern/libusb/cmake_install.cmake",
 		"/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/cmake_install.cmake",
-		"/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/src/cmake_install.cmake",
-		"/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/packages/cmake_install.cmake"
+		"/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/src/cmake_install.cmake"
 	],
 	"Parallel" : false
 }

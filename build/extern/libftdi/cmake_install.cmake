@@ -43,17 +43,6 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES
-    "/home/e3xp0/Projects/FTDI2SPI/build/libftdi1.pc"
-    "/home/e3xp0/Projects/FTDI2SPI/build/libftdipp1.pc"
-    )
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/bin" TYPE PROGRAM FILES "/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/libftdi1-config")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/libftdi1" TYPE FILE FILES
     "/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/LibFTDI1Config.cmake"
     "/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/LibFTDI1ConfigVersion.cmake"
@@ -64,7 +53,6 @@ endif()
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
   include("/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/src/cmake_install.cmake")
-  include("/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/packages/cmake_install.cmake")
 
 endif()
 

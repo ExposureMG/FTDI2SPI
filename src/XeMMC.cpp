@@ -1,7 +1,6 @@
 #include "stdafx.h"
 #include "XSPI.h"
 #include <cstdint>
-#include <synchapi-shim.h>
 
 #include "wrapper_spi.h"
 #include <stdio.h>

@@ -109,43 +109,20 @@ extern/clean: extern/libftdi/clean
 
 # Recursive "all" directory target.
 extern/libftdi/all: extern/libftdi/src/all
-extern/libftdi/all: extern/libftdi/packages/all
 .PHONY : extern/libftdi/all
 
 # Recursive "codegen" directory target.
 extern/libftdi/codegen: extern/libftdi/src/codegen
-extern/libftdi/codegen: extern/libftdi/packages/codegen
 .PHONY : extern/libftdi/codegen
 
 # Recursive "preinstall" directory target.
 extern/libftdi/preinstall: extern/libftdi/src/preinstall
-extern/libftdi/preinstall: extern/libftdi/packages/preinstall
 .PHONY : extern/libftdi/preinstall
 
 # Recursive "clean" directory target.
 extern/libftdi/clean: extern/libftdi/CMakeFiles/dist.dir/clean
 extern/libftdi/clean: extern/libftdi/src/clean
-extern/libftdi/clean: extern/libftdi/packages/clean
 .PHONY : extern/libftdi/clean
-
-#=============================================================================
-# Directory level rules for directory extern/libftdi/packages
-
-# Recursive "all" directory target.
-extern/libftdi/packages/all:
-.PHONY : extern/libftdi/packages/all
-
-# Recursive "codegen" directory target.
-extern/libftdi/packages/codegen:
-.PHONY : extern/libftdi/packages/codegen
-
-# Recursive "preinstall" directory target.
-extern/libftdi/packages/preinstall:
-.PHONY : extern/libftdi/packages/preinstall
-
-# Recursive "clean" directory target.
-extern/libftdi/packages/clean:
-.PHONY : extern/libftdi/packages/clean
 
 #=============================================================================
 # Directory level rules for directory extern/libftdi/src

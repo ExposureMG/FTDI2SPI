@@ -19,15 +19,12 @@ set(FTDI2SPI_SOURCES
 )
 
 set(FTDI2SPI_HEADERS
-    FTD2XX/win32/include/FTCSPI.h
-    FTD2XX/win32/include/FTD2XX.H
     include/Flasher.h
     include/XNAND.h
     include/XSPI.h
     include/XeMMC.h
     include/sfc.h
     include/stdafx.h
-    include/synchapi-shim.h
     include/wrapper_spi.h
 )
 
@@ -41,29 +38,9 @@ target_include_directories(FTDI2SPI
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/FTD2XX
-        ${CMAKE_CURRENT_SOURCE_DIR}/FTD2XX/win32
-        ${CMAKE_CURRENT_SOURCE_DIR}/FTD2XX/win32/include
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/libftdi/src
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/libusb/libusb
         ${CMAKE_CURRENT_BINARY_DIR}/extern/libftdi/src
 )
 
 target_link_libraries(FTDI2SPI PRIVATE ftdi1-static)
-
-if(WIN32)
-    set(FTD2XX_WIN32_DIR "${CMAKE_CURRENT_SOURCE_DIR}/FTD2XX/win32")
-    set(FTD2XX_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/FTD2XX")
-
-    if(EXISTS "${FTD2XX_WIN32_DIR}/FTCSPI.lib")
-        target_link_libraries(FTDI2SPI PRIVATE "${FTD2XX_WIN32_DIR}/FTCSPI.lib")
-    elseif(EXISTS "${FTD2XX_BASE_DIR}/FTCSPI.lib")
-        target_link_libraries(FTDI2SPI PRIVATE "${FTD2XX_BASE_DIR}/FTCSPI.lib")
-    endif()
-
-    if(EXISTS "${FTD2XX_WIN32_DIR}/FTD2XX.lib")
-        target_link_libraries(FTDI2SPI PRIVATE "${FTD2XX_WIN32_DIR}/FTD2XX.lib")
-    elseif(EXISTS "${FTD2XX_BASE_DIR}/FTD2XX.lib")
-        target_link_libraries(FTDI2SPI PRIVATE "${FTD2XX_BASE_DIR}/FTD2XX.lib")
-    endif()
-endif()

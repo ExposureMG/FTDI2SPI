@@ -43,11 +43,3 @@
 /home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/src/CMakeFiles/install.dir
 /home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/src/CMakeFiles/install/local.dir
 /home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/src/CMakeFiles/install/strip.dir
-/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/packages/CMakeFiles/package.dir
-/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/packages/CMakeFiles/package_source.dir
-/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/packages/CMakeFiles/edit_cache.dir
-/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/packages/CMakeFiles/rebuild_cache.dir
-/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/packages/CMakeFiles/list_install_components.dir
-/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/packages/CMakeFiles/install.dir
-/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/packages/CMakeFiles/install/local.dir
-/home/e3xp0/Projects/FTDI2SPI/build/extern/libftdi/packages/CMakeFiles/install/strip.dir
