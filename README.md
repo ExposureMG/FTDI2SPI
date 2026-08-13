@@ -7,3 +7,9 @@ FTDI2SPI -> Properties -> C/C++ -> Preprocessor -> Preprocessor Definitions -> a
 
 Build -> Build Solution
 
+## Acknowledgements
+
+- Swizzy
+- Octal450
+- Mena
+- ExposureMG
