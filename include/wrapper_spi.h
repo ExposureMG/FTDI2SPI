@@ -15,6 +15,7 @@ void SetAnswerFast( void );
 void AddWriteOutBuffer( DWORD dwNumControlBitsToWrite, unsigned char pWriteControlBuffer[] );
 void AddReadOutBuffer( DWORD dwNumDataBitsToRead );
 void GetDataFromDevice(unsigned int dwNumDataBitsToRead, unsigned char ReadDataBuffer[] );
+void spi_QueueClockDelay( unsigned int numBytes );
 void closeDevice();
 
 // Host-side MPSSE command staging buffer. Enlarged from the original 65535 so a

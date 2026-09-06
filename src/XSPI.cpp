@@ -32,6 +32,12 @@ void reverse_array( unsigned char *buf, unsigned int size )
 
 void XSPIInit()
 {
+	spi_init();
+}
+
+void XSPIClose()
+{
+	closeDevice();
 }
 
 void XSPIPowerUp()
@@ -41,6 +47,28 @@ void XSPIPowerUp()
 void XSPIShutdown()
 {
 
+}
+
+void XSPIBatchBegin(void)
+{
+	ClearOutputBuffer();
+}
+
+void XSPIBatchSend(void)
+{
+	SendBytesToDevice();
+}
+
+void XSPIBatchReceive(unsigned char* outBuf, unsigned int numBytes)
+{
+	SetAnswerFast();
+	SendBytesToDevice();
+	GetDataFromDevice(numBytes, outBuf);
+}
+
+void XSPIQueueDelay(unsigned int numBytes)
+{
+	spi_QueueClockDelay(numBytes);
 }
 
 void XSPIEnterFlashMode()
@@ -62,20 +90,24 @@ void XSPILeaveFlashMode()
 
 }
 
-void XSPIRead_(unsigned char reg, unsigned char Data[])
+void XSPIQueueRead(unsigned char reg)
 {
-	unsigned char writeBuf[2] = { (reg << 2) | 1, 0xFF };	
-	//6 byte			
+	unsigned char writeBuf[2] = { (unsigned char)((reg << 2) | 1), 0xFF };	
 	EnableSPIChip();
 	AddWriteOutBuffer( sizeof(writeBuf)*8, writeBuf );
 	AddReadOutBuffer( 4*8 );	
 	DisableSPIChip();
-	
+}
+
+void XSPIRead_(unsigned char reg, unsigned char Data[])
+{
+	(void)Data;
+	XSPIQueueRead(reg);
 }
 
 void XSPIRead_sync(unsigned char reg, unsigned char Data[])
 {
-	unsigned char writeBuf[2] = { (reg << 2) | 1, 0xFF };	
+	unsigned char writeBuf[2] = { (unsigned char)((reg << 2) | 1), 0xFF };	
 		
 	ClearOutputBuffer();
 	
@@ -93,7 +125,7 @@ void XSPIRead_sync(unsigned char reg, unsigned char Data[])
 unsigned int XSPIReadWORD_(unsigned char reg)
 {
 	unsigned char res[2] = {0,0};
-	unsigned char writeBuf[2] = { (reg << 2) | 1, 0xFF };	
+	unsigned char writeBuf[2] = { (unsigned char)((reg << 2) | 1), 0xFF };	
 
 	ClearOutputBuffer();
 		
@@ -112,7 +144,7 @@ unsigned int XSPIReadWORD_(unsigned char reg)
 unsigned int XSPIReadDWORD_(unsigned char reg)
 {
 	unsigned char res[4] = { 0, 0, 0, 0 };
-	unsigned char writeBuf[2] = { (reg << 2) | 1, 0xFF };
+	unsigned char writeBuf[2] = { (unsigned char)((reg << 2) | 1), 0xFF };
 
 	ClearOutputBuffer();
 
@@ -133,7 +165,7 @@ unsigned int XSPIReadDWORD_(unsigned char reg)
 void XSPIReadBlock_(unsigned char reg, unsigned char* buf, int num_words) {
 	// For 512-byte block: reg = 0x20, bytes = 512
 
-	unsigned char writeBuf[2] = { (reg << 2) | 1, 0xFF };
+	unsigned char writeBuf[2] = { (unsigned char)((reg << 2) | 1), 0xFF };
 
 	ClearOutputBuffer();
 	
@@ -153,10 +185,15 @@ void XSPIReadBlock_(unsigned char reg, unsigned char* buf, int num_words) {
 	GetDataFromDevice(num_words * 4, buf);
 }
 
+void XSPIReadBlock(unsigned char reg, unsigned char* buf, int numWords)
+{
+	XSPIReadBlock_(reg, buf, numWords);
+}
+
 unsigned char XSPIReadBYTE_(unsigned char reg)
 {
 	unsigned char res;
-	unsigned char writeBuf[2] = { (reg << 2) | 1, 0xFF };	
+	unsigned char writeBuf[2] = { (unsigned char)((reg << 2) | 1), 0xFF };	
 	
 	ClearOutputBuffer();
 		
@@ -173,7 +210,7 @@ unsigned char XSPIReadBYTE_(unsigned char reg)
 
 void XSPIWrite_(unsigned char reg, unsigned char Data[] )
 {
-	unsigned char writeBuf[5] = { (reg << 2) | 2, 0,0,0,0 };	
+	unsigned char writeBuf[5] = { (unsigned char)((reg << 2) | 2), 0,0,0,0 };	
 	memcpy( &writeBuf[1], Data, 4 );
 	
 	EnableSPIChip();
@@ -185,7 +222,7 @@ void XSPIWrite_(unsigned char reg, unsigned char Data[] )
 
 void XSPIWrite_sync(unsigned char reg, unsigned char Data[] )
 {
-	unsigned char writeBuf[5] = { (reg << 2) | 2, 0,0,0,0 };	
+	unsigned char writeBuf[5] = { (unsigned char)((reg << 2) | 2), 0,0,0,0 };	
 	memcpy( &writeBuf[1], Data, 4 );
 
 	ClearOutputBuffer();
@@ -199,7 +236,7 @@ void XSPIWrite_sync(unsigned char reg, unsigned char Data[] )
 
 void XSPIWriteWORD_(unsigned char reg, unsigned int Data)
 {	
-	unsigned char writeBuf[5] = { (reg << 2) | 2, 0,0,0,0 };	
+	unsigned char writeBuf[5] = { (unsigned char)((reg << 2) | 2), 0,0,0,0 };	
 	memcpy( &writeBuf[1], &Data, 4 );
 
 	ClearOutputBuffer();
@@ -211,45 +248,61 @@ void XSPIWriteWORD_(unsigned char reg, unsigned int Data)
 	SendBytesToDevice();
 }
 
-void XSPIQueueBytes_(unsigned char reg, unsigned int Data) {
-	unsigned char writeBuf[5] = { (reg << 2) | 2, 0,0,0,0 };
-	memcpy(&writeBuf[1], &Data, 4);
+void XSPIQueueWriteDWORD(unsigned char reg, unsigned int data)
+{
+	unsigned char writeBuf[5] = { (unsigned char)((reg << 2) | 2), 0, 0, 0, 0 };
+	memcpy(&writeBuf[1], &data, 4);
 	EnableSPIChip();
 	AddWriteOutBuffer(sizeof(writeBuf) * 8, writeBuf);
 	DisableSPIChip();
-
 }
 
-void XSPIWriteBlock_(unsigned char reg, unsigned char* data) {
-	// Now send the data block (512 bytes)
+void XSPIQueueBytes_(unsigned char reg, unsigned int Data)
+{
+	XSPIQueueWriteDWORD(reg, Data);
+}
+
+void XSPIWriteBlock(unsigned char reg, const unsigned char* buf, int numWords)
+{
 	ClearOutputBuffer();
-	for (int i = 0; i < 0x200; i += 4) {
+	for (int i = 0; i < numWords; ++i) {
+		unsigned char writeBuf[5] = { (unsigned char)((reg << 2) | 2), 0, 0, 0, 0 };
+		memcpy(&writeBuf[1], &buf[i * 4], 4);
 		EnableSPIChip();
-	
-		AddWriteOutBuffer(0x20, &data[i]);  // Send 4 bytes at a time, 32 bits
+		AddWriteOutBuffer(sizeof(writeBuf) * 8, writeBuf);
 		DisableSPIChip();
 	}
 	SetAnswerFast();
 	SendBytesToDevice();
+}
 
+void XSPIWriteBlock_(unsigned char reg, unsigned char* data)
+{
+	XSPIWriteBlock(reg, data, 128);
+}
+
+void XSPIQueueWrite0(unsigned char reg)
+{
+	unsigned char writeBuf[5] = { (unsigned char)((reg << 2) | 2), 0, 0, 0, 0 };
+	EnableSPIChip();
+	AddWriteOutBuffer(sizeof(writeBuf) * 8, writeBuf);
+	DisableSPIChip();
 }
 
 void XSPIWrite0_(unsigned char reg)
 {
-	unsigned char writeBuf[5] = { (reg << 2) | 2, 0,0,0,0 };	
+	XSPIQueueWrite0(reg);
+}
 
+void XSPIQueueWriteBYTE(unsigned char reg, unsigned char d)
+{
+	unsigned char writeBuf[5] = { (unsigned char)((reg << 2) | 2), d, 0, 0, 0 };
 	EnableSPIChip();
-	AddWriteOutBuffer( sizeof(writeBuf)*8, writeBuf );	
+	AddWriteOutBuffer(sizeof(writeBuf) * 8, writeBuf);
 	DisableSPIChip();
-
 }
 
 void XSPIWriteBYTE_(unsigned char reg, unsigned char d)
 {
-	unsigned char writeBuf[5] = { (reg << 2) | 2, d,0,0,0 };	
-
-	EnableSPIChip();
-	AddWriteOutBuffer( sizeof(writeBuf)*8, writeBuf );	
-	DisableSPIChip();
-
+	XSPIQueueWriteBYTE(reg, d);
 }

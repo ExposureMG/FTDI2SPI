@@ -523,6 +523,19 @@ void spi_setGPIO( bool XXLo, bool EJLo )
 	dwNumBytesToRead = 0;	
 }
 
+void spi_QueueClockDelay( unsigned int numBytes )
+{
+	if (numBytes == 0)
+		return;
+
+	unsigned int n = numBytes - 1;
+	AddByteToOutputBuffer(CLK_DATA_BYTES_OUT_ON_NEG_CLK_LSB_FIRST_CMD, FALSE);
+	AddByteToOutputBuffer((BYTE)(n & 0xFF), FALSE);
+	AddByteToOutputBuffer((BYTE)((n >> 8) & 0xFF), FALSE);
+	for (unsigned int i = 0; i < numBytes; i++)
+		AddByteToOutputBuffer((BYTE)0x00, FALSE);
+}
+
 void closeDevice() {
     if (ftHandle != 0) {
         FTC_CLOSE_FINAL_STATE_PINS CloseFinalStatePinsData;

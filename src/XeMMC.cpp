@@ -4,7 +4,6 @@
 #include <synchapi.h>
 
 #include <stdio.h>
-#include "wrapper_spi.h"
 
 bool is_selected = false;
 bool is_block_set = false;
@@ -78,13 +77,13 @@ static int xbox_emmc_set_blocklen(int blocklen)
 
 
 bool send_cmd17(unsigned int lba) {
-	ClearOutputBuffer();
-	XSPIQueueBytes_(0x30, 0xFFFFFFFF);
-	XSPIQueueBytes_(0x04, 0x200);             // Block size
-	XSPIQueueBytes_(0x08, lba * 512);         // LBA (sector offset)
-	XSPIQueueBytes_(0x0C, 0x113A0010);        // CMD17
+	XSPIBatchBegin();
+	XSPIQueueWriteDWORD(0x30, 0xFFFFFFFF);
+	XSPIQueueWriteDWORD(0x04, 0x200);             // Block size
+	XSPIQueueWriteDWORD(0x08, lba * 512);         // LBA (sector offset)
+	XSPIQueueWriteDWORD(0x0C, 0x113A0010);        // CMD17
 	//64 bytes queue
-	SendBytesToDevice();
+	XSPIBatchSend();
 
 	// Poll for data ready (bit 2 of 0x30), with timeout
 	//this is *required*, you must wait until emmc says ready
@@ -101,11 +100,11 @@ bool send_cmd17(unsigned int lba) {
 }
 
 bool send_cmd24(unsigned int lba) {
-	ClearOutputBuffer();     // Some control register, reset state
-	XSPIQueueBytes_(0x04, 0x10200);             // Set block size = 512 bytes
-	XSPIQueueBytes_(0x08, lba << 9);         // Set the LBA/offset
-	XSPIQueueBytes_(0x0C, 0x183A0000);        // CMD24, argument/flags may differ for your HW
-	SendBytesToDevice();                      // Perform all above over one USB transaction
+	XSPIBatchBegin();     // Some control register, reset state
+	XSPIQueueWriteDWORD(0x04, 0x10200);             // Set block size = 512 bytes
+	XSPIQueueWriteDWORD(0x08, lba << 9);         // Set the LBA/offset
+	XSPIQueueWriteDWORD(0x0C, 0x183A0000);        // CMD24, argument/flags may differ for your HW
+	XSPIBatchSend();                      // Perform all above over one USB transaction
 
 	const int timeout = 5000;
 	int elapsed = 0;
@@ -132,7 +131,7 @@ bool emmc_read_block(uint32_t block, unsigned char* buffer) {
 	if (!send_cmd17(block)) {
 		return false;
 	}
-	XSPIReadBlock_(0x20, buffer, 128);
+	XSPIReadBlock(0x20, buffer, 128);
 	XSPIWriteWORD_(0x30, 0xFFFFFFFF);
 
 	return true;
@@ -166,15 +165,7 @@ int xbox_emmc_write_block(int lba, uint8_t* buf)
 
 	ret = xbox_emmc_wait_ints(1, 10000);
 
-	ClearOutputBuffer();
-	for (int i = 0; i < 0x200; i += 4)
-	{
-		uint32_t data;
-		memcpy(&data, buf + i, 4);
-		XSPIQueueBytes_(0x20, data);
-	}
-	SetAnswerFast();
-	SendBytesToDevice();
+	XSPIWriteBlock(0x20, buf, 128);
 	ret = xbox_emmc_wait_ints(0x12, 1500);
 
 	//xbox_emmc_deselect_card();
@@ -216,26 +207,26 @@ bool CMD7_SET = true;
 
 bool emmc_set_blocklen() {
 
-	ClearOutputBuffer();
-	XSPIQueueBytes_(0x30, 0xFFFFFFFF);    // Clear status
+	XSPIBatchBegin();
+	XSPIQueueWriteDWORD(0x30, 0xFFFFFFFF);    // Clear status
 	//========================CLEAR STATUS REG ABOVE================================
-	XSPIQueueBytes_(0x08, 0x200);         // 512 bytes
-	XSPIQueueBytes_(0x0C, 0x10A00010);    // CMD16 flag
-	SendBytesToDevice();
+	XSPIQueueWriteDWORD(0x08, 0x200);         // 512 bytes
+	XSPIQueueWriteDWORD(0x0C, 0x10A00010);    // CMD16 flag
+	XSPIBatchSend();
 	int timeout = 5000, t = 0;
 	while (t++ < timeout) {
 		if (XSPIReadWORD_(0x30) & 1) break;
 		Sleep(1);
 	}
 	//========================SET BLOCK LEN ABOVE===================================
-	ClearOutputBuffer();
-	XSPIQueueBytes_(0x30, 0xFFFFFFFF);    // Clear status
+	XSPIBatchBegin();
+	XSPIQueueWriteDWORD(0x30, 0xFFFFFFFF);    // Clear status
 	//========================CLEAR STATUS REG ABOVE================================
-	XSPIQueueBytes_(0x04, 0x200);         // 512 bytes (may be redundant)
-	XSPIQueueBytes_(0x08, 0xFFFF0000);    // RCA (argument)
-	XSPIQueueBytes_(0x0C, 0x71A0000);     // CMD7 flag
+	XSPIQueueWriteDWORD(0x04, 0x200);         // 512 bytes (may be redundant)
+	XSPIQueueWriteDWORD(0x08, 0xFFFF0000);    // RCA (argument)
+	XSPIQueueWriteDWORD(0x0C, 0x71A0000);     // CMD7 flag
 	//========================SELECT CARD ABOVE=====================================
-	SendBytesToDevice();
+	XSPIBatchSend();
 	t = 0;
 	while (t++ < timeout) {
 		if (XSPIReadWORD_(0x30) & 1)
@@ -280,7 +271,7 @@ int xbox_emmc_read_block_ext_csd(unsigned char* buf, int block, int is_block)
 	ret = xbox_emmc_wait_ints(0x21, 1500);
 	if (!ret)
 	{
-		XSPIReadBlock_(0x20, buf, 128);
+		XSPIReadBlock(0x20, buf, 128);
 	}
 	//xbox_emmc_deselect_card();
 	return ret;

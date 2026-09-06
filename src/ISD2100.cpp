@@ -1,5 +1,5 @@
-#include "ftd2xx.h"
 #include <windows.h>
+#include "ftd2xx.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -702,7 +702,7 @@ bool WriteISD2100(const char* filename, bool verbose) {
 	for (int i = 0; i < 10; i++) {
 		unsigned int checkAddr = (rand() % (0xB000 / 4)) * 4;
 
-		BYTE cmd[4] = { 0xA2, (checkAddr >> 16) & 0xFF, (checkAddr >> 8) & 0xFF, checkAddr & 0xFF };
+		BYTE cmd[4] = { 0xA2, (BYTE)((checkAddr >> 16) & 0xFF), (BYTE)((checkAddr >> 8) & 0xFF), (BYTE)(checkAddr & 0xFF) };
 		SPI_Select(g_ftHandle, false);
 		WaitForReady(g_ftHandle, 5000);
 		SPI_SendCommand(g_ftHandle, cmd, 4);
