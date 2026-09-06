@@ -1,6 +1,0 @@
-[submodule "extern/libusb"]
-	path = extern/libusb
-	url = https://github.com/libusb/libusb.git
-[submodule "extern/libftdi"]
-	path = extern/libftdi
-	url = git://developer.intra2net.com/libftdi
