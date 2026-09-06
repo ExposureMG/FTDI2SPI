@@ -2,7 +2,19 @@
 #ifndef WRAPPER_H
 #define WRAPPER_H
 
-#include "ftd2xx.h"
+#ifdef LIBFTDI
+  #ifdef _WIN32
+    #include "stdafx.h"
+  #else
+    // libftdi does not supply the Windows types used by this interface.
+    #include <stdint.h>
+    typedef uint8_t  BYTE;
+    typedef uint16_t WORD;
+    typedef uint32_t DWORD;
+  #endif
+#else
+  #include "ftd2xx.h"
+#endif
 
 bool spi_init( void );
 void spi_setGPIO( bool GPIO1, bool GPIO2 );
