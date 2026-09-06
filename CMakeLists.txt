@@ -4,7 +4,7 @@ project(FTDI2SPI LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Select FTD2XX and FTCSPI libraries per target architecture
+# Select FTD2XX library per target architecture
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
     set(FTD2XX_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/ftd2xx-winarm")
     set(FTD2XX_LIB "${FTD2XX_DIR}/arm64/FTD2XX.lib")
@@ -15,7 +15,6 @@ else()
     # x86 (Win32 / 32-bit)
     set(FTD2XX_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/ftd2xx-win32")
     set(FTD2XX_LIB "${FTD2XX_DIR}/i386/ftd2xx.lib")
-    set(FTCSPI_LIB "${CMAKE_CURRENT_SOURCE_DIR}/extern/FTCSPI.lib")
 endif()
 set(FTD2XX_HEADER "${FTD2XX_DIR}/ftd2xx.h")
 
@@ -40,7 +39,6 @@ set(HEADERS
     include/sfc.h
     include/stdafx.h
     include/wrapper_spi.h
-    extern/FTCSPI.h
     ${FTD2XX_HEADER}
 )
 
@@ -65,6 +63,3 @@ target_link_libraries(FTDI2SPI PRIVATE
     ${FTD2XX_LIB}
 )
 
-if(FTCSPI_LIB)
-    target_link_libraries(FTDI2SPI PRIVATE ${FTCSPI_LIB})
-endif()

@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "FTCSPI.h"
+
 
 #define PIN_SK   (1 << 0)  // BDBUS0 (SCK)
 #define PIN_MOSI (1 << 1)  // BDBUS1 (SDI/MOSI)
@@ -20,9 +20,7 @@
 static BYTE g_currentSSState = PIN_SS;
 static unsigned int g_currentFreqHz = 0;
 static FT_HANDLE g_ftHandle = 0;
-static FTC_HANDLE g_ftcHandle = 0;
 static bool g_isInitialized = false;
-static FTC_STATUS Status = FTC_SUCCESS;
 extern int percentage = 0;
 // Command line options
 typedef struct {

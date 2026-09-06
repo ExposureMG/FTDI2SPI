@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include <windows.h>
+#include <stdlib.h>
 
-#include "FTCSPI.h"
 #include "FTD2XX.H"
 #include <stdio.h>
 #include "wrapper_spi.h"
@@ -26,268 +26,7 @@ const BYTE CLK_DATA_BITS_IN_ON_NEG_CLK_LSB_FIRST_CMD = '\x2F';
 typedef WORD ReadDataWordBuffer[MAX_READ_DATA_WORDS_BUFFER_SIZE];
 typedef ReadDataWordBuffer *PReadDataWordBuffer;
 
-FTC_HANDLE ftHandle = 0;  
-FTC_STATUS Status = FTC_SUCCESS;
-
-FTC_INIT_CONDITION WriteStartCondition;
-FTC_INIT_CONDITION ReadStartCondition;
-  
-WriteControlByteBuffer WriteControlBuffer;
-WriteDataByteBuffer WriteDataBuffer;
-DWORD dwNumDataBytesReturned = 0;
-FTC_WAIT_DATA_WRITE WaitDataWriteComplete;
-FTH_HIGHER_OUTPUT_PINS HighPinsWriteActiveStates;
-
-FTC_CHIP_SELECT_PINS ChipSelectsDisableStates;
-FTH_INPUT_OUTPUT_PINS HighInputOutputPins;
-  
-bool spi_init( void )
-{
-  DWORD dwNumHiSpeedDevices = 0;
-  char szDeviceName[100];
-  char szChannel[5];
-  DWORD dwLocationID = 0;
-  DWORD dwHiSpeedDeviceType = 0;
-  DWORD dwHiSpeedDeviceIndex = 0;
-  char szDeviceDetails[150];
-  BYTE timerValue = 0;
-  DWORD dwClockFrequencyHz = 0;
-  bool bPerformCommandSequence = false;
-  DWORD dwNumDataBytesToWrite = 0;
-  DWORD dwDataWordInitValue = 0;
-  DWORD dwDataWordValue = 0;
-  DWORD dwWriteDataWordAddress = 0;
-  DWORD dwControlLocAddress1 = 0;
-  DWORD dwControlLocAddress2 = 0;
-  DWORD dwReadDataWordAddress = 0;
-  WORD dwReadWordValue = 0;
-  DWORD dwDataWordWritten = 0;
-  DWORD dwCharCntr = 0;
-  DWORD dwReadDataIndex = 0;
-  int MsgBoxKeyPressed = 0;
-  DWORD dwLoopCntr = 0;
-
-  char szDllVersion[10];
-//  char szTitleErrorMessage[100];
-//  char szStatusErrorMessage[100];
-  //char szErrorMessage[200];
-  char szMismatchMessage[100];
-
-  for (dwCharCntr = 0; (dwCharCntr < 100); dwCharCntr++)
-    szMismatchMessage[dwCharCntr] = '\0';
-
-  Status = SPI_GetDllVersion(szDllVersion, 10);
-
-  Status = SPI_GetNumHiSpeedDevices(&dwNumHiSpeedDevices);
-
-  if ((Status == FTC_SUCCESS) && (dwNumHiSpeedDevices > 0))
-  {
-    do
-    {
-      Status = SPI_GetHiSpeedDeviceNameLocIDChannel(dwHiSpeedDeviceIndex, szDeviceName, 100, &dwLocationID, szChannel, 5, &dwHiSpeedDeviceType);
-
-      dwHiSpeedDeviceIndex = dwHiSpeedDeviceIndex + 1;
-    }
-    while ((Status == FTC_SUCCESS) && (dwHiSpeedDeviceIndex < dwNumHiSpeedDevices) && (strcmp(szChannel, "B") != 0));
-
-    if (Status == FTC_SUCCESS)
-    {
-      if (strcmp(szChannel, "B") != 0)
-        Status = FTC_DEVICE_IN_USE;
-    }
-
-    if (Status == FTC_SUCCESS) {
-      Status = SPI_OpenHiSpeedDevice(szDeviceName, dwLocationID, szChannel, &ftHandle);
-
-      if (Status == FTC_SUCCESS) {
-        Status = SPI_GetHiSpeedDeviceType(ftHandle, &dwHiSpeedDeviceType);
-
-        if (Status == FTC_SUCCESS) {
-          strcpy_s(szDeviceDetails, "Type = ");
-
-          if (dwHiSpeedDeviceType == FT4232H_DEVICE_TYPE)
-            strcat_s(szDeviceDetails, "FT4232H");
-          else if (dwHiSpeedDeviceType == FT2232H_DEVICE_TYPE)
-            strcat_s(szDeviceDetails, "FT2232H");
-
-          strcat_s(szDeviceDetails, ", Name = ");
-          strcat_s(szDeviceDetails, szDeviceName);
-
-          //MessageBox(NULL, szDeviceDetails, "Hi Speed Device", MB_OK);
-        }
-      }
-    }
-  }
-
-  if ((Status == FTC_SUCCESS) && (ftHandle != 0))
-  {
-    Status = SPI_InitDevice(ftHandle, MAX_FREQ_CLOCK_DIVISOR); //65536
-
-    if (Status == FTC_SUCCESS) {
-      if ((Status = SPI_GetDeviceLatencyTimer(ftHandle, &timerValue)) == FTC_SUCCESS) {
-        if ((Status = SPI_SetDeviceLatencyTimer(ftHandle, 50)) == FTC_SUCCESS) {
-          Status = SPI_GetDeviceLatencyTimer(ftHandle, &timerValue);
-
-          Status = SPI_SetDeviceLatencyTimer(ftHandle, 1);
-
-          Status = SPI_GetDeviceLatencyTimer(ftHandle, &timerValue);
-        }
-      }
-    }
-
-    if (Status == FTC_SUCCESS)
-    {
-      if ((Status = SPI_GetHiSpeedDeviceClock(0, &dwClockFrequencyHz)) == FTC_SUCCESS)
-      {
-        if ((Status = SPI_TurnOnDivideByFiveClockingHiSpeedDevice(ftHandle)) == FTC_SUCCESS)
-        {
-          Status = SPI_GetHiSpeedDeviceClock(0, &dwClockFrequencyHz);
-
-          if ((Status = SPI_SetClock(ftHandle, MAX_FREQ_CLOCK_DIVISOR, &dwClockFrequencyHz)) == FTC_SUCCESS)
-          {
-
-            if ((Status = SPI_TurnOffDivideByFiveClockingHiSpeedDevice(ftHandle)) == FTC_SUCCESS)
-              Status = SPI_SetClock(ftHandle, MAX_FREQ_CLOCK_DIVISOR, &dwClockFrequencyHz);
-          }
-        }
-      }
-    }
-
-    if (Status == FTC_SUCCESS)
-    {
-//      Status = SPI_SetLoopback(ftHandle, false);
-
-      if (Status == FTC_SUCCESS)
-      {
-        bPerformCommandSequence = false;
-
-        if (bPerformCommandSequence == true)
-        {
-            if (Status == FTC_SUCCESS)
-              Status = SPI_ClearDeviceCmdSequence(ftHandle);
-        }
-
-        if (Status == FTC_SUCCESS)
-        {
-          // Must set the chip select disable states for all the SPI devices connected to a FT2232H hi-speed dual
-          // device or FT4332H hi-speed quad device
-          ChipSelectsDisableStates.bADBUS3ChipSelectPinState = true;
-          ChipSelectsDisableStates.bADBUS4GPIOL1PinState = false;
-          ChipSelectsDisableStates.bADBUS5GPIOL2PinState = false;
-          ChipSelectsDisableStates.bADBUS6GPIOL3PinState = false;
-          ChipSelectsDisableStates.bADBUS7GPIOL4PinState = false;
-
-          HighInputOutputPins.bPin1InputOutputState = true;
-          HighInputOutputPins.bPin1LowHighState = false;
-          HighInputOutputPins.bPin2InputOutputState = true;
-          HighInputOutputPins.bPin2LowHighState = true;
-          HighInputOutputPins.bPin3InputOutputState = false;
-          HighInputOutputPins.bPin3LowHighState = false;
-          HighInputOutputPins.bPin4InputOutputState = false;
-          HighInputOutputPins.bPin4LowHighState = false;
-
-          HighInputOutputPins.bPin5InputOutputState = false;
-          HighInputOutputPins.bPin5LowHighState = false;
-          HighInputOutputPins.bPin6InputOutputState = false;
-          HighInputOutputPins.bPin6LowHighState = false;
-          HighInputOutputPins.bPin7InputOutputState = false;
-          HighInputOutputPins.bPin7LowHighState = false;
-          HighInputOutputPins.bPin8InputOutputState = false;
-          HighInputOutputPins.bPin8LowHighState = false;
-
-          Status = SPI_SetHiSpeedDeviceGPIOs(ftHandle, &ChipSelectsDisableStates, &HighInputOutputPins); //NULL
-/*
-          if (Status == FTC_SUCCESS)
-          {
-            Sleep(200);
-
-            Status = SPI_GetHiSpeedDeviceGPIOs(ftHandle, &HighPinsInputData); //NULL);
-
-            Sleep(200);
-          }
-*/
-        }        
-      }
-    }
-  }
-/*
-  if (ftHandle != 0) 
-  {
-    //CloseFinalStatePinsData.bTCKPinState = true;
-    //CloseFinalStatePinsData.bTCKPinActiveState = true;
-    //CloseFinalStatePinsData.bTDIPinState = true;
-    //CloseFinalStatePinsData.bTDIPinActiveState = false;
-    //CloseFinalStatePinsData.bTMSPinState = true;
-    //CloseFinalStatePinsData.bTMSPinActiveState = false;
-
-    //Status = SPI_CloseDevice(ftHandle, &CloseFinalStatePinsData);
-
-    SPI_Close(ftHandle);
-    ftHandle = 0;
-  }
-
-  if ((Status != FTC_SUCCESS) || (dwNumHiSpeedDevices == 0) || (strlen(szMismatchMessage) > 0))
-  {
-    if (Status != FTC_SUCCESS)
-    {
-      sprintf_s(szErrorMessage, "Status Code(%u) - ", Status);
-
-      Status = SPI_GetErrorCodeString("EN", Status, szStatusErrorMessage, 100);
-
-      strcat_s(szErrorMessage, szStatusErrorMessage);
-
-//      MessageBox(NULL, szErrorMessage, "FTCSPI DLL Error Status Message", MB_OK);
-    } else {
-      if (dwNumHiSpeedDevices == 0)
-        strcpy_s(szErrorMessage, "There are no devices connected.");
-      else
-        strcpy_s(szErrorMessage, szMismatchMessage);
-
-//      MessageBox(NULL, szErrorMessage, "FTCSPI DLL Error Message", MB_OK);
-    }
-  }
-  else
-  {
-    Status = SPI_GetDllVersion(szDllVersion, 10);
-
-    //if (Status == FTC_SUCCESS)
-      //MessageBox(NULL, szDllVersion, "SPI DLL Version", MB_OK);
-    //else
-    //{
-      //Status = I2C_GetErrorCodeString("EN", Status, szErrorMessage, 100);
-
-      //MessageBox(NULL, szErrorMessage, "SPI Error Status Message", MB_OK);
-    //}
-
-    strcpy_s(szErrorMessage, "Passed.");
-
-//    MessageBox(NULL, szErrorMessage, "FTCSPI DLL Message", MB_OK);
-  }
-  */
-
-	// Set the 8 general purpose higher input/output pins
-	HighPinsWriteActiveStates.bPin1ActiveState = true;
-	HighPinsWriteActiveStates.bPin1State = true;
-	HighPinsWriteActiveStates.bPin2ActiveState = true;
-	HighPinsWriteActiveStates.bPin2State = true;
-	HighPinsWriteActiveStates.bPin3ActiveState = false;
-	HighPinsWriteActiveStates.bPin3State = false;
-	HighPinsWriteActiveStates.bPin4ActiveState = false;
-	HighPinsWriteActiveStates.bPin4State = false;
-	HighPinsWriteActiveStates.bPin5ActiveState = false;
-	HighPinsWriteActiveStates.bPin5State = false;
-	HighPinsWriteActiveStates.bPin6ActiveState = false;
-	HighPinsWriteActiveStates.bPin6State = false;
-	HighPinsWriteActiveStates.bPin7ActiveState = false;
-	HighPinsWriteActiveStates.bPin7State = false;
-	HighPinsWriteActiveStates.bPin8ActiveState = false;
-	HighPinsWriteActiveStates.bPin8State = false;
-
-
-
-	return (Status == FTC_SUCCESS && dwNumHiSpeedDevices > 0 ) ? true : false;
-
-}
+FT_HANDLE ftHandle = NULL;
 
 BYTE byOutputBuffer[OUTPUT_BUFFER_SIZE];
 BYTE dwLowPinsValue = 0;
@@ -295,9 +34,115 @@ DWORD dwNumBytesToSend = 0; // Index to the output buffer
 DWORD dwNumBytesSent = 0; // Count of actual bytes sent - used with FT_Write
 DWORD dwNumBytesToRead = 0; // Number of bytes available to read
 
+bool spi_init( void )
+{
+  FT_STATUS ftStatus;
+  DWORD numDevs = 0;
+  char targetDesc[64] = {0};
+
+  // Enumerate all connected FTDI devices
+  ftStatus = FT_CreateDeviceInfoList(&numDevs);
+  if (ftStatus != FT_OK || numDevs == 0)
+    return false;
+
+  FT_DEVICE_LIST_INFO_NODE* devInfo =
+    (FT_DEVICE_LIST_INFO_NODE*)malloc(sizeof(FT_DEVICE_LIST_INFO_NODE) * numDevs);
+  if (!devInfo)
+    return false;
+
+  bool found = false;
+  ftStatus = FT_GetDeviceInfoList(devInfo, &numDevs);
+  if (ftStatus == FT_OK) {
+    for (DWORD i = 0; i < numDevs; i++) {
+      const char* desc = devInfo[i].Description;
+      size_t len = strlen(desc);
+      // Select channel B: description ends with " B"
+      if (len >= 2 && desc[len - 2] == ' ' && desc[len - 1] == 'B') {
+        strncpy_s(targetDesc, sizeof(targetDesc), desc, _TRUNCATE);
+        found = true;
+        break;
+      }
+    }
+  }
+  free(devInfo);
+
+  if (!found)
+    return false;
+
+  // Open the channel B device by description
+  ftStatus = FT_OpenEx((PVOID)targetDesc, FT_OPEN_BY_DESCRIPTION, &ftHandle);
+  if (ftStatus != FT_OK)
+    return false;
+
+  // Reset to serial mode, then switch to MPSSE
+  FT_SetBitMode(ftHandle, 0x00, 0x00);  // Reset
+  Sleep(50);
+  FT_SetBitMode(ftHandle, 0x00, 0x02);  // MPSSE mode
+  Sleep(50);
+
+  // Flush buffers and configure USB transfer sizes
+  FT_Purge(ftHandle, FT_PURGE_RX | FT_PURGE_TX);
+  FT_SetUSBParameters(ftHandle, 64 * 1024, 64 * 1024);
+  FT_SetLatencyTimer(ftHandle, 1);
+
+  BYTE cmd[8];
+  DWORD bytesWritten;
+
+  // Disable loopback (MPSSE command 0x85)
+  cmd[0] = 0x85;
+  FT_Write(ftHandle, cmd, 1, &bytesWritten);
+
+  // Enable divide-by-5 clocking (mirrors SPI_TurnOnDivideByFiveClockingHiSpeedDevice)
+  // 60 MHz / 5 / ((divisor + 1) * 2) = 6 MHz at divisor=0
+  cmd[0] = 0x8B;
+  FT_Write(ftHandle, cmd, 1, &bytesWritten);
+
+  // Set clock divisor = MAX_FREQ_CLOCK_DIVISOR (0)
+  cmd[0] = 0x86;
+  cmd[1] = (MAX_FREQ_CLOCK_DIVISOR) & 0xFF;
+  cmd[2] = ((MAX_FREQ_CLOCK_DIVISOR) >> 8) & 0xFF;
+  FT_Write(ftHandle, cmd, 3, &bytesWritten);
+
+  // Disable divide-by-5 clocking (mirrors SPI_TurnOffDivideByFiveClockingHiSpeedDevice)
+  // 60 MHz / ((divisor + 1) * 2) = 30 MHz at divisor=0
+  cmd[0] = 0x8A;
+  FT_Write(ftHandle, cmd, 1, &bytesWritten);
+
+  // Set clock divisor again with divide-by-5 off
+  cmd[0] = 0x86;
+  cmd[1] = (MAX_FREQ_CLOCK_DIVISOR) & 0xFF;
+  cmd[2] = ((MAX_FREQ_CLOCK_DIVISOR) >> 8) & 0xFF;
+  FT_Write(ftHandle, cmd, 3, &bytesWritten);
+
+  // Configure low byte (ADBUS) pins:
+  //   ADBUS0 = SK  (output)
+  //   ADBUS1 = DO  (output)
+  //   ADBUS2 = DI  (input)
+  //   ADBUS3 = CS  (output, deasserted high)
+  //   ADBUS4-7 = GPIOL1-4 (output, low)
+  // Direction byte: 0xFB = 1111_1011 (all output except DI/ADBUS2)
+  dwLowPinsValue = 0x08;  // CS deasserted (high), SK/DO/GPIOL1-4 low
+  cmd[0] = SET_LOW_BYTE_DATA_BITS_CMD;  // 0x80
+  cmd[1] = dwLowPinsValue;
+  cmd[2] = 0xFB;
+  FT_Write(ftHandle, cmd, 3, &bytesWritten);
+
+  // Configure high byte (ACBUS) pins:
+  //   ACBUS0 (Pin1) = output, low
+  //   ACBUS1 (Pin2) = output, high
+  //   ACBUS2-7    = input, low
+  // Direction byte: 0x03 (ACBUS0+ACBUS1 output), value: 0x02 (ACBUS1 high)
+  cmd[0] = SET_HIGH_BYTE_DATA_BITS_CMD;  // 0x82
+  cmd[1] = 0x02;
+  cmd[2] = 0x03;
+  FT_Write(ftHandle, cmd, 3, &bytesWritten);
+
+  return (ftHandle != NULL);
+}
+
 void SendBytesToDevice( void )
 {
-  FTC_STATUS Status = FTC_SUCCESS;
+  FT_STATUS Status = FT_OK;
   DWORD dwNumDataBytesToSend = 0;
   DWORD dwNumBytesSent = 0;
   DWORD dwTotalNumBytesSent = 0;
@@ -316,11 +161,11 @@ void SendBytesToDevice( void )
       // This function sends data to a FT2232C dual type device. The dwNumBytesToSend variable specifies the number of
       // bytes in the output buffer to be sent to a FT2232C dual type device. The dwNumBytesSent variable contains
       // the actual number of bytes sent to a FT2232C dual type device.
-      Status = FT_Write((FT_HANDLE)ftHandle, &byOutputBuffer[dwTotalNumBytesSent], dwNumDataBytesToSend, &dwNumBytesSent);
+      Status = FT_Write(ftHandle, &byOutputBuffer[dwTotalNumBytesSent], dwNumDataBytesToSend, &dwNumBytesSent);
 
       dwTotalNumBytesSent = dwTotalNumBytesSent + dwNumBytesSent;
     }
-    while ((dwTotalNumBytesSent < dwNumBytesToSend) && (Status == FTC_SUCCESS)); 
+    while ((dwTotalNumBytesSent < dwNumBytesToSend) && (Status == FT_OK)); 
   }
   else
   {
@@ -328,7 +173,7 @@ void SendBytesToDevice( void )
     // bytes in the output buffer to be sent to a FT2232C dual type device. The dwNumBytesSent variable contains
     // the actual number of bytes sent to a FT2232C dual type device.
 
-    Status = FT_Write((FT_HANDLE)ftHandle, byOutputBuffer, dwNumBytesToSend, &dwNumBytesSent);
+    Status = FT_Write(ftHandle, byOutputBuffer, dwNumBytesToSend, &dwNumBytesSent);
   }
 
   dwNumBytesToSend = 0;
@@ -366,7 +211,7 @@ void GetDataFromDevice(unsigned int dwNumBytesToRead, unsigned char ReadDataBuff
 	int try_count = 10;
 	
 	do {
-		FT_Read((FT_HANDLE)ftHandle, &ReadDataBuffer[dwBytesReadIndex], dwNumBytesToRead, &dwNumBytesRead);
+		FT_Read(ftHandle, &ReadDataBuffer[dwBytesReadIndex], dwNumBytesToRead, &dwNumBytesRead);
 		dwBytesReadIndex += dwNumBytesRead;
 		dwNumBytesToRead -= dwNumBytesRead;
 	} while( dwNumBytesToRead > 0 && try_count-- > 0 );
@@ -494,7 +339,7 @@ void spi_SetCS( bool ChipSelect )
 	dwLowPinsValue |= ChipSelect ? 0x08 : 0x00;
 	byOutputBuffer[dwNumBytesToSend++] = dwLowPinsValue;
 	byOutputBuffer[dwNumBytesToSend++] = 0x3E; // byDirection
-	FT_STATUS ftStatus = FT_Write( (FT_HANDLE)ftHandle, byOutputBuffer, dwNumBytesToSend, &dwNumBytesSent);
+	FT_STATUS ftStatus = FT_Write( ftHandle, byOutputBuffer, dwNumBytesToSend, &dwNumBytesSent);
 //	if(ftStatus == FT_OK)
 //		while(dwNumBytesSent != dwNumBytesToSend)
 //			printf("Sending byte %d\n", dwNumBytesSent);
@@ -514,7 +359,7 @@ void spi_setGPIO( bool XXLo, bool EJLo )
 	dwLowPinsValue |= (XXLo ? 0x10 : 0x00) | (EJLo ? 0x20 : 0x00);
 	byOutputBuffer[dwNumBytesToSend++] = dwLowPinsValue; 
 	byOutputBuffer[dwNumBytesToSend++] = 0x3E; // byDirection
-	FT_STATUS ftStatus = FT_Write( (FT_HANDLE)ftHandle, byOutputBuffer, dwNumBytesToSend, &dwNumBytesSent);
+	FT_STATUS ftStatus = FT_Write( ftHandle, byOutputBuffer, dwNumBytesToSend, &dwNumBytesSent);
 //	if(ftStatus == FT_OK)
 //		while(dwNumBytesSent != dwNumBytesToSend)
 //			printf("Sending byte %d\n", dwNumBytesSent);
@@ -537,18 +382,14 @@ void spi_QueueClockDelay( unsigned int numBytes )
 }
 
 void closeDevice() {
-    if (ftHandle != 0) {
-        FTC_CLOSE_FINAL_STATE_PINS CloseFinalStatePinsData;
-        CloseFinalStatePinsData.bTCKPinState = true;
-        CloseFinalStatePinsData.bTCKPinActiveState = true;
-        CloseFinalStatePinsData.bTDIPinState = true;
-        CloseFinalStatePinsData.bTDIPinActiveState = false;
-        CloseFinalStatePinsData.bTMSPinState = true;
-        CloseFinalStatePinsData.bTMSPinActiveState = false;
+    if (ftHandle != NULL) {
+        // Deassert CS, then reset from MPSSE back to serial mode
+        FT_SetBitMode(ftHandle, 0x00, 0x00);
 
-        Status = SPI_CloseDevice(ftHandle, &CloseFinalStatePinsData);
+        // Flush any remaining data in the USB buffers
+        FT_Purge(ftHandle, FT_PURGE_RX | FT_PURGE_TX);
 
-        SPI_Close(ftHandle);
-        ftHandle = 0;
+        FT_Close(ftHandle);
+        ftHandle = NULL;
     }
 }
