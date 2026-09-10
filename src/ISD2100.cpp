@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "stdafx.h"
 #include "ftd2xx.h"
 #include <stdio.h>
 #include <string.h>

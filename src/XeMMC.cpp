@@ -1,7 +1,6 @@
+#include "stdafx.h"
 #include <cstdint>
 #include "XSPI.h"
-#include <Windows.h>
-#include <synchapi.h>
 
 #include <stdio.h>
 

@@ -8,7 +8,7 @@
 #include "sfc.h"
 #include "XSPI.h"
 #include <stdio.h>
-#include "XEMMC.h"
+#include "XeMMC.h"
 
 unsigned int gNextBlock;
 unsigned char gWORDsLeft;

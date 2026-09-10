@@ -1,8 +1,7 @@
 #include "stdafx.h"
-#include <windows.h>
 #include <stdlib.h>
 
-#include "FTD2XX.H"
+#include "ftd2xx.h"
 #include <stdio.h>
 #include "wrapper_spi.h"
 

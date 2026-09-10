@@ -1,6 +1,5 @@
 #include "stdafx.h"
 
-#include <windows.h>
 #include "wrapper_spi.h"
 #include "Flasher.h"
 #include "sfc.h"
@@ -32,7 +31,7 @@ unsigned int eMMCblocks = 0;
 
 extern "C"
 {
-	__declspec(dllexport) int spi(int mode, int size, char* file, int startblock, int length) {
+	FTDI2SPI_EXPORT int spi(int mode, int size, char* file, int startblock, int length) {
 		unsigned char* flash_xbox;
 		unsigned int addr_raw = 0;
 
@@ -270,7 +269,7 @@ extern "C"
 		closeDevice();
 		return -10; // NO MODE
 	}
-	__declspec(dllexport) int emmc_read(const char* file, int startblock, int length) {
+	FTDI2SPI_EXPORT int emmc_read(const char* file, int startblock, int length) {
 
 		if (!spi_init()) {
 			closeDevice();
@@ -326,7 +325,7 @@ extern "C"
 		closeDevice();
 		return 0;
 	}
-	__declspec(dllexport) int emmc_write(const char* file, int startblock) {
+	FTDI2SPI_EXPORT int emmc_write(const char* file, int startblock) {
 
 		const uint32_t block_size = 512;
 		unsigned char* buffer = (unsigned char*)malloc(block_size);
@@ -395,7 +394,7 @@ extern "C"
 		closeDevice();
 		return 0;
 	}
-	__declspec(dllexport) int spiGetBlocks() {
+	FTDI2SPI_EXPORT int spiGetBlocks() {
 		if (start_spi) {
 			return block_flash / 32; // Decimal not hex
 		}
@@ -403,47 +402,47 @@ extern "C"
 			return -1;
 		}
 	}
-	__declspec(dllexport) int spiGetConfig() {
+	FTDI2SPI_EXPORT int spiGetConfig() {
 		return flashConfig; // Decimal not hex
 	}
-	__declspec(dllexport) unsigned int emmcGetBlocks() {
+	FTDI2SPI_EXPORT unsigned int emmcGetBlocks() {
 		return eMMCblocks; // Decimal not hex
 	}
-	__declspec(dllexport) void spiStop() {
+	FTDI2SPI_EXPORT void spiStop() {
 		if (start_spi) stop = true;
 	}
-	__declspec(dllexport) int progressISD2100() {
+	FTDI2SPI_EXPORT int progressISD2100() {
 		return getPercentage();
 	}
-	__declspec(dllexport) bool FTDI_INIT(int clockHz) {
+	FTDI2SPI_EXPORT bool FTDI_INIT(int clockHz) {
 		return FTDI_AutoInitialize(clockHz);
 	}
-	__declspec(dllexport) void ISD2100_Readback(const char* path, bool verbose) {
+	FTDI2SPI_EXPORT void ISD2100_Readback(const char* path, bool verbose) {
 		DumpISD2100(path, verbose);
 	}
-	__declspec(dllexport) void ISD2100_Play(int index) {
+	FTDI2SPI_EXPORT void ISD2100_Play(int index) {
 		Play((unsigned short)index);
 		Sleep(2500);
 	}
-	__declspec(dllexport) void ISD_AUTO_INIT() {
+	FTDI2SPI_EXPORT void ISD_AUTO_INIT() {
 		ISD_INIT();
 	}
-	__declspec(dllexport) void ISD2100_Wipe() {
+	FTDI2SPI_EXPORT void ISD2100_Wipe() {
 		ISD_EraseMass();
 	}
-	__declspec(dllexport) bool ISD2100_Write(const char* filename, bool verbose) {
+	FTDI2SPI_EXPORT bool ISD2100_Write(const char* filename, bool verbose) {
 		return WriteISD2100(filename, verbose);
 	}
-	__declspec(dllexport) bool ISD2100_Verify(const char* filename, bool verbose) {
+	FTDI2SPI_EXPORT bool ISD2100_Verify(const char* filename, bool verbose) {
 		return VerifyISD2100(filename, verbose);
 	}
-	__declspec(dllexport) void FTDI_DEINIT_IMMEDIATELY() {
+	FTDI2SPI_EXPORT void FTDI_DEINIT_IMMEDIATELY() {
 		FTDI_DEINIT();
 	}
-	__declspec(dllexport) void ISD2100_DeInitialize() {
+	FTDI2SPI_EXPORT void ISD2100_DeInitialize() {
 		ISD2100_PowerDown();
 	}
-	__declspec(dllexport) void ISD2100_Reboot() {
+	FTDI2SPI_EXPORT void ISD2100_Reboot() {
 		ISD2100_Reset();
 	}
 }

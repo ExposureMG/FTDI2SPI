@@ -2,6 +2,8 @@
 #ifndef WRAPPER_H
 #define WRAPPER_H
 
+#include "ftd2xx.h"
+
 bool spi_init( void );
 void spi_setGPIO( bool GPIO1, bool GPIO2 );
 void spi_SetCS( bool ChipSelect );

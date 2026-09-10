@@ -1,6 +1,4 @@
-
 #include "stdafx.h"
-#include <windows.h>
 
 #include "XSPI.h"
 #include "wrapper_spi.h"
