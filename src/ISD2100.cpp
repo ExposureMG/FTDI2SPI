@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "ftd2xx.h"
+#include "isd_transport.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -58,6 +58,26 @@ void print_usage(const char* program_name) {
 }
 
 void list_ftdi_devices() {
+#ifndef _WIN32
+    auto* context = ftdi_new();
+    if (!context) return;
+    ftdi_device_list* devices = nullptr;
+    const int count = ftdi_usb_find_all(context, &devices, 0x0403, 0x6010);
+    if (count < 0) {
+        printf("Error: Failed to list FTDI devices: %s\n", ftdi_get_error_string(context));
+    } else {
+        printf("Found %d FTDI device(s):\n", count);
+        for (auto* node = devices; node; node = node->next) {
+            char manufacturer[128] = {}, description[128] = {}, serial[128] = {};
+            if (ftdi_usb_get_strings(context, node->dev, manufacturer, sizeof(manufacturer),
+                                     description, sizeof(description), serial, sizeof(serial)) == 0)
+                printf("  %s (%s)\n", description, serial);
+        }
+    }
+    ftdi_list_free(&devices);
+    ftdi_free(context);
+#else
+
 	FT_STATUS ftStatus;
 	DWORD numDevs;
 
@@ -95,6 +115,7 @@ void list_ftdi_devices() {
 		}
 		free(devInfo);
 	}
+#endif
 }
 
 // [Include all the SPI functions from your code here]
@@ -738,6 +759,9 @@ int getPercentage() {
 }	
 // Alternative: Open by description string
 FT_HANDLE OpenFTDIByDescription(const char* description) {
+#ifndef _WIN32
+    return ISD_OpenByDescription(description);
+#else
 	FT_HANDLE ftHandle;
 	FT_STATUS ftStatus;
 
@@ -750,6 +774,7 @@ FT_HANDLE OpenFTDIByDescription(const char* description) {
 	}
 
 	return NULL;
+#endif
 }
 
 bool FTDI_AutoInitialize(unsigned int clockHz) {
@@ -759,6 +784,8 @@ bool FTDI_AutoInitialize(unsigned int clockHz) {
 	if (!ftHandle) {
 		ftHandle = OpenFTDIByDescription("Dual RS232-HS B");
 	}
+
+	if (!ftHandle) return false;
 
 	// Store globally and initialize
 	g_ftHandle = ftHandle;
@@ -826,169 +853,3 @@ bool ISD2100_Reset() {
 
 	return true;
 }
-
-//int main(/*int argc, char* argv[]*/) {
-//
-//    //Options opts = {
-////    .device_index = 0,
-////    .clock_hz = DEFAULT_CLOCK_HZ,
-////    .operation = NULL,
-////    .filename = NULL,
-////    .address = 0,
-////    .verbose = false
-////};
-//
-////// Parse command line arguments
-////int i = 1;
-////while (i < argc) {
-////    if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) {
-////        opts.device_index = atoi(argv[++i]);
-////    }
-////    else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
-////        opts.clock_hz = atoi(argv[++i]);
-////    }
-////    else if (strcmp(argv[i], "-v") == 0) {
-////        opts.verbose = true;
-////    }
-////    else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
-////        print_usage(argv[0]);
-////        return 0;
-////    }
-////    else if (argv[i][0] != '-') {
-////        // This is the command
-////        opts.operation = argv[i];
-////        if (i + 1 < argc && argv[i + 1][0] != '-') {
-////            opts.filename = argv[++i];
-////        }
-////        break;
-////    }
-////    i++;
-////}
-//
-////// Handle list command (doesn't need device)
-////if (opts.operation && strcmp(opts.operation, "list") == 0) {
-////    list_ftdi_devices();
-////    return 0;
-////}
-//
-////// Check if we have a command
-////if (!opts.operation) {
-////    print_usage(argv[0]);
-////    return 1;
-////}
-//
-////// Open FTDI device
-////FT_HANDLE ftHandle;
-////FT_STATUS ftStatus = FT_Open(opts.device_index, &ftHandle);
-////if (ftStatus != FT_OK) {
-////    printf("Error: Failed to open FTDI device %d (status: %d)\n",
-////        opts.device_index, ftStatus);
-////    printf("Try '%s list' to see available devices\n", argv[0]);
-////    return 1;
-////}
-//
-////// Initialize MPSSE mode
-////MPSSE_Init(ftHandle);
-////MPSSE_SetClock(ftHandle, opts.clock_hz);
-//
-////// Initialize ISD2100
-////if (!ISD_Init(ftHandle)) {
-////    printf("Error: ISD2100 initialization failed\n");
-////    FT_Close(ftHandle);
-////    return 1;
-////}
-//
-////// Execute command
-////int ret = 0;
-//
-////if (strcmp(opts.operation, "info") == 0) {
-////    BYTE dev_id[4];
-////    ISD_ReadID(ftHandle, dev_id);
-////    printf("ISD2100 Device ID: %02X %02X %02X %02X\n",
-////        dev_id[0], dev_id[1], dev_id[2], dev_id[3]);
-//
-////    BYTE status = ReadStatus(ftHandle);
-////    printf("Status Register: 0x%02X\n", status);
-////    printf("  Power: %s\n", (status & 0x80) ? "DOWN" : "UP");
-////    printf("  Ready: %s\n", (status & 0x01) ? "BUSY" : "READY");
-//
-////}
-////else if (strcmp(opts.operation, "read") == 0) {
-////    if (!opts.filename) {
-////        printf("Error: Output filename required\n");
-////        ret = 1;
-////    }
-////    else {
-////        if (!DumpISD2100(ftHandle, opts.filename, opts.verbose)) {
-////            ret = 1;
-////        }
-////    }
-//
-////}
-////else if (strcmp(opts.operation, "write") == 0) {
-////    if (!opts.filename) {
-////        printf("Error: Input filename required\n");
-////        ret = 1;
-////    }
-////    else {
-////        if (!WriteISD2100(ftHandle, opts.filename, opts.verbose)) {
-////            ret = 1;
-////        }
-////    }
-//
-////}
-////else if (strcmp(opts.operation, "erase") == 0) {
-////    ISD_EraseMass(ftHandle);
-//
-////}
-////else if (strcmp(opts.operation, "play") == 0) {
-////    if (!opts.filename) {
-////        printf("Error: Index required (e.g., 0x100)\n");
-////        ret = 1;
-////    }
-////    else {
-////        unsigned int index = strtoul(opts.filename, NULL, 0);
-////        Play(ftHandle, (unsigned short)index);
-////        Sleep(2500);
-////    }
-//
-////}
-////else if (strcmp(opts.operation, "status") == 0) {
-////    BYTE status = ReadStatus(ftHandle);
-////    printf("Status Register: 0x%02X\n", status);
-////    printf("  Bit 7 (PWR): %d - %s\n", (status >> 7) & 1,
-////        (status & 0x80) ? "Powered Down" : "Powered Up");
-////    printf("  Bit 6: %d\n", (status >> 6) & 1);
-////    printf("  Bit 5: %d\n", (status >> 5) & 1);
-////    printf("  Bit 4: %d\n", (status >> 4) & 1);
-////    printf("  Bit 3: %d\n", (status >> 3) & 1);
-////    printf("  Bit 2: %d\n", (status >> 2) & 1);
-////    printf("  Bit 1: %d\n", (status >> 1) & 1);
-////    printf("  Bit 0 (RDY): %d - %s\n", status & 1,
-////        (status & 1) ? "Busy" : "Ready");
-//
-////}
-////else if (strcmp(opts.operation, "verify") == 0) {
-////    if (!opts.filename) {
-////        printf("Error: Filename required\n");
-////        ret = 1;
-////    }
-////    else {
-////        if (!VerifyISD2100(ftHandle, opts.filename, opts.verbose)) {
-////            ret = 1;
-////        }
-////    }
-//
-////}
-////else {
-////    printf("Error: Unknown command '%s'\n", opts.operation);
-////    print_usage(argv[0]);
-////    ret = 1;
-////}
-//
-////// Cleanup
-////FT_SetBitMode(ftHandle, 0x00, 0x00);  // Reset to normal mode
-////FT_Close(ftHandle);
-//
-//    return 1;
-//}

@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <algorithm>
+#include <chrono>
+#include <string>
 
 #ifdef LIBFTDI
 #include <ftdi.h> // libftdi1 link with -lftdi1
@@ -45,258 +48,179 @@ DWORD dwNumBytesToSend = 0; // Index to the output buffer
 DWORD dwNumBytesSent = 0;   // Count of actual bytes sent - used with FT_Write
 DWORD dwNumBytesToRead = 0; // Number of bytes available to read
 
-bool spi_init(void) {
-  BYTE cmd[8];
+namespace {
+constexpr unsigned int TRANSFER_TIMEOUT_MS = 5000;
+using Clock = std::chrono::steady_clock;
 
+[[noreturn]] void TransferFailure(const char* operation) {
+  std::string message(operation);
 #ifdef LIBFTDI
-
-  ftdi = ftdi_new();
-  if (!ftdi)
-    return false;
-
-  // Target channel B of a dual-port FT2232H (VID/PID 0x0403/0x6010).
-  // ftdi_set_interface must be called before ftdi_usb_open.
-  // Adjust the VID/PID below if your hardware uses a different chip
-  // (e.g. 0x6011 for FT4232H).
-  ftdi_set_interface(ftdi, INTERFACE_B);
-
-  if (ftdi_usb_open(ftdi, 0x0403, 0x6010) < 0) {
-    ftdi_free(ftdi);
-    ftdi = NULL;
-    return false;
+  if (ftdi) {
+    const char* detail = ftdi_get_error_string(ftdi);
+    if (detail && *detail) message += std::string(": ") + detail;
   }
+#endif
+  // A failed transfer may have reached the device partially. Close it rather
+  // than permit a retry of an ambiguous MPSSE stream.
+  closeDevice();
+  throw SpiTransportError(message);
+}
 
-  // Reset to serial mode, then switch to MPSSE
-  ftdi_set_bitmode(ftdi, 0x00, BITMODE_RESET);
-  Sleep(50);
-  ftdi_set_bitmode(ftdi, 0x00, BITMODE_MPSSE);
-  Sleep(50);
+void Check(bool success, const char* operation) {
+  if (!success) TransferFailure(operation);
+}
 
-  // Flush buffers and configure USB transfer sizes
-  ftdi_usb_purge_buffers(ftdi);
-  ftdi_read_data_set_chunksize(ftdi, 64 * 1024);
-  ftdi_write_data_set_chunksize(ftdi, 64 * 1024);
-  ftdi_set_latency_timer(ftdi, 1);
+void RequireDevice() {
+#ifdef LIBFTDI
+  Check(ftdi != nullptr, "FTDI device is not open");
+#else
+  Check(ftHandle != nullptr, "FTDI device is not open");
+#endif
+}
 
-  // Disable loopback (MPSSE command 0x85)
-  cmd[0] = 0x85;
-  ftdi_write_data(ftdi, cmd, 1);
+void SetTimeout(Clock::time_point deadline) {
+  const auto now = Clock::now();
+  Check(now < deadline, "FTDI transfer timed out");
+  const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+  const unsigned int timeout = static_cast<unsigned int>(std::max<long long>(1, remaining));
+#ifdef LIBFTDI
+  ftdi->usb_read_timeout = timeout;
+  ftdi->usb_write_timeout = timeout;
+#else
+  Check(FT_SetTimeouts(ftHandle, timeout, timeout) == FT_OK, "FT_SetTimeouts failed");
+#endif
+}
 
-  // Enable divide-by-5 clocking (mirrors
-  // SPI_TurnOnDivideByFiveClockingHiSpeedDevice) 60 MHz / 5 / ((divisor + 1) *
-  // 2) = 6 MHz at divisor=0
-  cmd[0] = 0x8B;
-  ftdi_write_data(ftdi, cmd, 1);
+void WriteAll(const unsigned char* data, unsigned int size) {
+  if (size == 0) return;
+  RequireDevice();
+  const auto deadline = Clock::now() + std::chrono::milliseconds(TRANSFER_TIMEOUT_MS);
+  unsigned int offset = 0;
+  while (offset < size) {
+    SetTimeout(deadline);
+    const unsigned int chunk = std::min<unsigned int>(size - offset, MAX_NUM_BYTES_USB_WRITE);
+#ifdef LIBFTDI
+    const int sent = ftdi_write_data(ftdi, data + offset, chunk);
+    Check(sent >= 0, "ftdi_write_data failed");
+#else
+    DWORD sent = 0;
+    Check(FT_Write(ftHandle, const_cast<unsigned char*>(data + offset), chunk, &sent) == FT_OK,
+          "FT_Write failed");
+#endif
+    Check(sent > 0 && static_cast<unsigned int>(sent) <= chunk, "FTDI write made no progress or returned an invalid count");
+    offset += static_cast<unsigned int>(sent);
+  }
+}
+} // namespace
 
-  // Set clock divisor = MAX_FREQ_CLOCK_DIVISOR (0)
-  cmd[0] = 0x86;
-  cmd[1] = (MAX_FREQ_CLOCK_DIVISOR) & 0xFF;
-  cmd[2] = ((MAX_FREQ_CLOCK_DIVISOR) >> 8) & 0xFF;
-  ftdi_write_data(ftdi, cmd, 3);
-
-  // Disable divide-by-5 clocking (mirrors
-  // SPI_TurnOffDivideByFiveClockingHiSpeedDevice) 60 MHz / ((divisor + 1) * 2)
-  // = 30 MHz at divisor=0
-  cmd[0] = 0x8A;
-  ftdi_write_data(ftdi, cmd, 1);
-
-  // Set clock divisor again with divide-by-5 off
-  cmd[0] = 0x86;
-  cmd[1] = (MAX_FREQ_CLOCK_DIVISOR) & 0xFF;
-  cmd[2] = ((MAX_FREQ_CLOCK_DIVISOR) >> 8) & 0xFF;
-  ftdi_write_data(ftdi, cmd, 3);
-
-  // Configure low byte (ADBUS) pins:
-  //   ADBUS0 = SK  (output)
-  //   ADBUS1 = DO  (output)
-  //   ADBUS2 = DI  (input)
-  //   ADBUS3 = CS  (output, deasserted high)
-  //   ADBUS4-7 = GPIOL1-4 (output, low)
-  // Direction byte: 0xFB = 1111_1011 (all output except DI/ADBUS2)
-  dwLowPinsValue = 0x08; // CS deasserted (high), SK/DO/GPIOL1-4 low
-  cmd[0] = SET_LOW_BYTE_DATA_BITS_CMD; // 0x80
-  cmd[1] = dwLowPinsValue;
-  cmd[2] = 0xFB;
-  ftdi_write_data(ftdi, cmd, 3);
-
-  // Configure high byte (ACBUS) pins:
-  //   ACBUS0 (Pin1) = output, low
-  //   ACBUS1 (Pin2) = output, high
-  //   ACBUS2-7    = input, low
-  // Direction byte: 0x03 (ACBUS0+ACBUS1 output), value: 0x02 (ACBUS1 high)
-  cmd[0] = SET_HIGH_BYTE_DATA_BITS_CMD; // 0x82
-  cmd[1] = 0x02;
-  cmd[2] = 0x03;
-  ftdi_write_data(ftdi, cmd, 3);
-
-  return (ftdi != NULL);
-
-#else // ftd2xx
-
-  FT_STATUS ftStatus;
-  DWORD numDevs = 0;
-  char targetDesc[64] = {0};
-
-  // Enumerate all connected FTDI devices
-  ftStatus = FT_CreateDeviceInfoList(&numDevs);
-  if (ftStatus != FT_OK || numDevs == 0)
-    return false;
-
-  FT_DEVICE_LIST_INFO_NODE *devInfo = (FT_DEVICE_LIST_INFO_NODE *)malloc(
-      sizeof(FT_DEVICE_LIST_INFO_NODE) * numDevs);
-  if (!devInfo)
-    return false;
-
-  bool found = false;
-  ftStatus = FT_GetDeviceInfoList(devInfo, &numDevs);
-  if (ftStatus == FT_OK) {
-    for (DWORD i = 0; i < numDevs; i++) {
-      const char *desc = devInfo[i].Description;
-      size_t len = strlen(desc);
-      // Select channel B: description ends with " B"
-      if (len >= 2 && desc[len - 2] == ' ' && desc[len - 1] == 'B') {
-        strncpy_s(targetDesc, sizeof(targetDesc), desc, _TRUNCATE);
-        found = true;
-        break;
+bool spi_init(void) {
+  closeDevice();
+  try {
+#ifdef LIBFTDI
+    ftdi = ftdi_new();
+    if (!ftdi) return false;
+    Check(ftdi_set_interface(ftdi, INTERFACE_B) == 0, "ftdi_set_interface failed");
+    Check(ftdi_usb_open(ftdi, 0x0403, 0x6010) == 0, "ftdi_usb_open failed");
+    ftdi->usb_read_timeout = TRANSFER_TIMEOUT_MS;
+    ftdi->usb_write_timeout = TRANSFER_TIMEOUT_MS;
+    Check(ftdi_set_bitmode(ftdi, 0x00, BITMODE_RESET) == 0, "FTDI reset failed");
+    Sleep(50);
+    Check(ftdi_set_bitmode(ftdi, 0x00, BITMODE_MPSSE) == 0, "FTDI MPSSE mode failed");
+    Sleep(50);
+    Check(ftdi_usb_purge_buffers(ftdi) == 0, "FTDI purge failed");
+    Check(ftdi_read_data_set_chunksize(ftdi, 64 * 1024) == 0, "FTDI read chunk size failed");
+    Check(ftdi_write_data_set_chunksize(ftdi, 64 * 1024) == 0, "FTDI write chunk size failed");
+    Check(ftdi_set_latency_timer(ftdi, 1) == 0, "FTDI latency timer failed");
+#else
+    DWORD numDevs = 0;
+    char targetDesc[64] = {};
+    if (FT_CreateDeviceInfoList(&numDevs) != FT_OK || numDevs == 0) return false;
+    auto* devInfo = static_cast<FT_DEVICE_LIST_INFO_NODE*>(malloc(sizeof(FT_DEVICE_LIST_INFO_NODE) * numDevs));
+    if (!devInfo) return false;
+    bool found = false;
+    if (FT_GetDeviceInfoList(devInfo, &numDevs) == FT_OK) {
+      for (DWORD i = 0; i < numDevs; ++i) {
+        const char* desc = devInfo[i].Description;
+        const size_t len = strlen(desc);
+        if (len >= 2 && desc[len - 2] == ' ' && desc[len - 1] == 'B') {
+          found = strncpy_s(targetDesc, sizeof(targetDesc), desc, _TRUNCATE) == 0;
+          break;
+        }
       }
     }
+    free(devInfo);
+    if (!found) return false;
+    Check(FT_OpenEx(targetDesc, FT_OPEN_BY_DESCRIPTION, &ftHandle) == FT_OK, "FT_OpenEx failed");
+    Check(FT_SetTimeouts(ftHandle, TRANSFER_TIMEOUT_MS, TRANSFER_TIMEOUT_MS) == FT_OK, "FT_SetTimeouts failed");
+    Check(FT_SetBitMode(ftHandle, 0x00, 0x00) == FT_OK, "FTDI reset failed");
+    Sleep(50);
+    Check(FT_SetBitMode(ftHandle, 0x00, 0x02) == FT_OK, "FTDI MPSSE mode failed");
+    Sleep(50);
+    Check(FT_Purge(ftHandle, FT_PURGE_RX | FT_PURGE_TX) == FT_OK, "FTDI purge failed");
+    Check(FT_SetUSBParameters(ftHandle, 64 * 1024, 64 * 1024) == FT_OK, "FTDI USB parameters failed");
+    Check(FT_SetLatencyTimer(ftHandle, 1) == FT_OK, "FTDI latency timer failed");
+#endif
+    BYTE cmd[3];
+    // Disable loopback (MPSSE command 0x85)
+    cmd[0] = 0x85;
+    WriteAll(cmd, 1);
+
+    // Enable divide-by-5 clocking (mirrors
+    // SPI_TurnOnDivideByFiveClockingHiSpeedDevice) 60 MHz / 5 / ((divisor + 1) *
+    // 2) = 6 MHz at divisor=0
+    cmd[0] = 0x8B;
+    WriteAll(cmd, 1);
+
+    // Set clock divisor = MAX_FREQ_CLOCK_DIVISOR (0)
+    cmd[0] = 0x86;
+    cmd[1] = (MAX_FREQ_CLOCK_DIVISOR) & 0xFF;
+    cmd[2] = ((MAX_FREQ_CLOCK_DIVISOR) >> 8) & 0xFF;
+    WriteAll(cmd, 3);
+
+    // Disable divide-by-5 clocking (mirrors
+    // SPI_TurnOffDivideByFiveClockingHiSpeedDevice) 60 MHz / ((divisor + 1) * 2)
+    // = 30 MHz at divisor=0
+    cmd[0] = 0x8A;
+    WriteAll(cmd, 1);
+
+    // Set clock divisor again with divide-by-5 off
+    cmd[0] = 0x86;
+    cmd[1] = (MAX_FREQ_CLOCK_DIVISOR) & 0xFF;
+    cmd[2] = ((MAX_FREQ_CLOCK_DIVISOR) >> 8) & 0xFF;
+    WriteAll(cmd, 3);
+
+    // Configure low byte (ADBUS) pins:
+    //   ADBUS0 = SK  (output)
+    //   ADBUS1 = DO  (output)
+    //   ADBUS2 = DI  (input)
+    //   ADBUS3 = CS  (output, deasserted high)
+    //   ADBUS4-7 = GPIOL1-4 (output, low)
+    // Direction byte: 0xFB = 1111_1011 (all output except DI/ADBUS2)
+    dwLowPinsValue = 0x08; // CS deasserted (high), SK/DO/GPIOL1-4 low
+    cmd[0] = SET_LOW_BYTE_DATA_BITS_CMD; // 0x80
+    cmd[1] = dwLowPinsValue;
+    cmd[2] = 0xFB;
+    WriteAll(cmd, 3);
+
+    // Configure high byte (ACBUS) pins:
+    //   ACBUS0 (Pin1) = output, low
+    //   ACBUS1 (Pin2) = output, high
+    //   ACBUS2-7    = input, low
+    // Direction byte: 0x03 (ACBUS0+ACBUS1 output), value: 0x02 (ACBUS1 high)
+    cmd[0] = SET_HIGH_BYTE_DATA_BITS_CMD; // 0x82
+    cmd[1] = 0x02;
+    cmd[2] = 0x03;
+    WriteAll(cmd, 3);
+
+    return true;
+  } catch (const SpiTransportError&) {
+    // TransferFailure has already released the device and pending commands.
+    return false;
   }
-  free(devInfo);
-
-  if (!found)
-    return false;
-
-  // Open the channel B device by description
-  ftStatus = FT_OpenEx((PVOID)targetDesc, FT_OPEN_BY_DESCRIPTION, &ftHandle);
-  if (ftStatus != FT_OK)
-    return false;
-
-  // Reset to serial mode, then switch to MPSSE
-  FT_SetBitMode(ftHandle, 0x00, 0x00); // Reset
-  Sleep(50);
-  FT_SetBitMode(ftHandle, 0x00, 0x02); // MPSSE mode
-  Sleep(50);
-
-  // Flush buffers and configure USB transfer sizes
-  FT_Purge(ftHandle, FT_PURGE_RX | FT_PURGE_TX);
-  FT_SetUSBParameters(ftHandle, 64 * 1024, 64 * 1024);
-  FT_SetLatencyTimer(ftHandle, 1);
-
-  DWORD bytesWritten;
-
-  // Disable loopback (MPSSE command 0x85)
-  cmd[0] = 0x85;
-  FT_Write(ftHandle, cmd, 1, &bytesWritten);
-
-  // Enable divide-by-5 clocking (mirrors
-  // SPI_TurnOnDivideByFiveClockingHiSpeedDevice) 60 MHz / 5 / ((divisor + 1) *
-  // 2) = 6 MHz at divisor=0
-  cmd[0] = 0x8B;
-  FT_Write(ftHandle, cmd, 1, &bytesWritten);
-
-  // Set clock divisor = MAX_FREQ_CLOCK_DIVISOR (0)
-  cmd[0] = 0x86;
-  cmd[1] = (MAX_FREQ_CLOCK_DIVISOR) & 0xFF;
-  cmd[2] = ((MAX_FREQ_CLOCK_DIVISOR) >> 8) & 0xFF;
-  FT_Write(ftHandle, cmd, 3, &bytesWritten);
-
-  // Disable divide-by-5 clocking (mirrors
-  // SPI_TurnOffDivideByFiveClockingHiSpeedDevice) 60 MHz / ((divisor + 1) * 2)
-  // = 30 MHz at divisor=0
-  cmd[0] = 0x8A;
-  FT_Write(ftHandle, cmd, 1, &bytesWritten);
-
-  // Set clock divisor again with divide-by-5 off
-  cmd[0] = 0x86;
-  cmd[1] = (MAX_FREQ_CLOCK_DIVISOR) & 0xFF;
-  cmd[2] = ((MAX_FREQ_CLOCK_DIVISOR) >> 8) & 0xFF;
-  FT_Write(ftHandle, cmd, 3, &bytesWritten);
-
-  // Configure low byte (ADBUS) pins:
-  //   ADBUS0 = SK  (output)
-  //   ADBUS1 = DO  (output)
-  //   ADBUS2 = DI  (input)
-  //   ADBUS3 = CS  (output, deasserted high)
-  //   ADBUS4-7 = GPIOL1-4 (output, low)
-  // Direction byte: 0xFB = 1111_1011 (all output except DI/ADBUS2)
-  dwLowPinsValue = 0x08; // CS deasserted (high), SK/DO/GPIOL1-4 low
-  cmd[0] = SET_LOW_BYTE_DATA_BITS_CMD; // 0x80
-  cmd[1] = dwLowPinsValue;
-  cmd[2] = 0xFB;
-  FT_Write(ftHandle, cmd, 3, &bytesWritten);
-
-  // Configure high byte (ACBUS) pins:
-  //   ACBUS0 (Pin1) = output, low
-  //   ACBUS1 (Pin2) = output, high
-  //   ACBUS2-7    = input, low
-  // Direction byte: 0x03 (ACBUS0+ACBUS1 output), value: 0x02 (ACBUS1 high)
-  cmd[0] = SET_HIGH_BYTE_DATA_BITS_CMD; // 0x82
-  cmd[1] = 0x02;
-  cmd[2] = 0x03;
-  FT_Write(ftHandle, cmd, 3, &bytesWritten);
-
-  return (ftHandle != NULL);
-
-#endif // LIBFTDI
 }
 
 void SendBytesToDevice(void) {
-#ifdef LIBFTDI
-
-  // ftdi_write_data returns the number of bytes written, or a negative error
-  // code.
-  int totalSent = 0;
-  int remaining = (int)dwNumBytesToSend;
-  while (remaining > 0) {
-    int chunk = (remaining > MAX_NUM_BYTES_USB_WRITE) ? MAX_NUM_BYTES_USB_WRITE
-                                                      : remaining;
-    int sent = ftdi_write_data(ftdi, &byOutputBuffer[totalSent], chunk);
-    if (sent < 0)
-      break; // write error
-    totalSent += sent;
-    remaining -= sent;
-  }
-
-#else // ftd2xx
-
-  FT_STATUS Status = FT_OK;
-  DWORD dwNumDataBytesToSend = 0;
-  DWORD dwNumBytesSent = 0;
-  DWORD dwTotalNumBytesSent = 0;
-
-  if (dwNumBytesToSend > MAX_NUM_BYTES_USB_WRITE) {
-    do {
-      // 25/08/05 - Can only use 4096 byte block as Windows 2000 Professional
-      // does not allow you to alter the USB buffer size 25/08/05 - Windows 2000
-      // Professional always sets the USB buffer size to 4K ie 4096
-      if ((dwTotalNumBytesSent + MAX_NUM_BYTES_USB_WRITE) <= dwNumBytesToSend)
-        dwNumDataBytesToSend = MAX_NUM_BYTES_USB_WRITE;
-      else
-        dwNumDataBytesToSend = (dwNumBytesToSend - dwTotalNumBytesSent);
-
-      // This function sends data to a FT2232C dual type device. The
-      // dwNumBytesToSend variable specifies the number of bytes in the output
-      // buffer to be sent to a FT2232C dual type device. The dwNumBytesSent
-      // variable contains the actual number of bytes sent to a FT2232C dual
-      // type device.
-      Status = FT_Write(ftHandle, &byOutputBuffer[dwTotalNumBytesSent],
-                        dwNumDataBytesToSend, &dwNumBytesSent);
-
-      dwTotalNumBytesSent = dwTotalNumBytesSent + dwNumBytesSent;
-    } while ((dwTotalNumBytesSent < dwNumBytesToSend) && (Status == FT_OK));
-  } else {
-    // This function sends data to a FT2232C dual type device. The
-    // dwNumBytesToSend variable specifies the number of bytes in the output
-    // buffer to be sent to a FT2232C dual type device. The dwNumBytesSent
-    // variable contains the actual number of bytes sent to a FT2232C dual type
-    // device.
-
-    Status =
-        FT_Write(ftHandle, byOutputBuffer, dwNumBytesToSend, &dwNumBytesSent);
-  }
-
-#endif // LIBFTDI
-
+  WriteAll(byOutputBuffer, dwNumBytesToSend);
   dwNumBytesToSend = 0;
 }
 
@@ -317,41 +241,28 @@ void SetAnswerFast(void) {
   AddByteToOutputBuffer(SEND_ANSWER_BACK_IMMEDIATELY_CMD, false);
 }
 
-void GetDataFromDevice(unsigned int dwNumBytesToRead,
-                       unsigned char ReadDataBuffer[]) {
-  int try_count = 10;
-
+void GetDataFromDevice(unsigned int size, unsigned char data[]) {
+  if (size == 0) return;
+  RequireDevice();
+  Check(data != nullptr, "FTDI read buffer is null");
+  const auto deadline = Clock::now() + std::chrono::milliseconds(TRANSFER_TIMEOUT_MS);
+  unsigned int offset = 0;
+  while (offset < size) {
+    SetTimeout(deadline);
+    const unsigned int chunk = std::min<unsigned int>(size - offset, 64 * 1024);
 #ifdef LIBFTDI
-
-  // ftdi_read_data returns bytes read (> 0), 0 if nothing yet, or < 0 on error.
-  int totalRead = 0;
-  int remaining = (int)dwNumBytesToRead;
-  while (remaining > 0 && try_count-- > 0) {
-    int n = ftdi_read_data(ftdi, &ReadDataBuffer[totalRead], remaining);
-    if (n > 0) {
-      totalRead += n;
-      remaining -= n;
-    }
+    const int received = ftdi_read_data(ftdi, data + offset, chunk);
+    Check(received >= 0, "ftdi_read_data failed");
+#else
+    DWORD received = 0;
+    Check(FT_Read(ftHandle, data + offset, chunk, &received) == FT_OK, "FT_Read failed");
+#endif
+    Check(static_cast<unsigned int>(received) <= chunk, "FTDI read returned an invalid count");
+    offset += static_cast<unsigned int>(received);
+    if (received == 0) Sleep(1);
   }
-
-#else // ftd2xx
-
-  DWORD dwNumBytesRead = 0;
-  //	DWORD dwNumBytesToRead = dwNumDataBitsToRead/8;
-  DWORD dwBytesReadIndex = 0;
-
-  do {
-    FT_Read(ftHandle, &ReadDataBuffer[dwBytesReadIndex], dwNumBytesToRead,
-            &dwNumBytesRead);
-    dwBytesReadIndex += dwNumBytesRead;
-    dwNumBytesToRead -= dwNumBytesRead;
-  } while (dwNumBytesToRead > 0 && try_count-- > 0);
-
-#endif // LIBFTDI
-
-  if (try_count <= 0)
-    throw "ERROR: NO DATA FROM DEVICE";
 }
+
 void DisableSPIChip(void) {
   AddByteToOutputBuffer(SET_LOW_BYTE_DATA_BITS_CMD, false);
   dwLowPinsValue = (dwLowPinsValue | CHIP_SELECT_PIN); // set CS to high
@@ -462,15 +373,7 @@ void spi_SetCS(bool ChipSelect) {
   byOutputBuffer[dwNumBytesToSend++] = dwLowPinsValue;
   byOutputBuffer[dwNumBytesToSend++] = 0x3E; // byDirection
 
-#ifdef LIBFTDI
-  ftdi_write_data(ftdi, byOutputBuffer, dwNumBytesToSend);
-#else
-  FT_STATUS ftStatus =
-      FT_Write(ftHandle, byOutputBuffer, dwNumBytesToSend, &dwNumBytesSent);
-//	if(ftStatus == FT_OK)
-//		while(dwNumBytesSent != dwNumBytesToSend)
-//			printf("Sending byte %d\n", dwNumBytesSent);
-#endif // LIBFTDI
+  SendBytesToDevice();
 
   dwNumBytesToSend = 0;
   dwNumBytesToRead = 0;
@@ -487,15 +390,7 @@ void spi_setGPIO(bool XXLo, bool EJLo) {
   byOutputBuffer[dwNumBytesToSend++] = dwLowPinsValue;
   byOutputBuffer[dwNumBytesToSend++] = 0x3E; // byDirection
 
-#ifdef LIBFTDI
-  ftdi_write_data(ftdi, byOutputBuffer, dwNumBytesToSend);
-#else
-  FT_STATUS ftStatus =
-      FT_Write(ftHandle, byOutputBuffer, dwNumBytesToSend, &dwNumBytesSent);
-//	if(ftStatus == FT_OK)
-//		while(dwNumBytesSent != dwNumBytesToSend)
-//			printf("Sending byte %d\n", dwNumBytesSent);
-#endif // LIBFTDI
+  SendBytesToDevice();
 
   dwNumBytesToSend = 0;
   dwNumBytesToRead = 0;
@@ -514,6 +409,10 @@ void spi_QueueClockDelay(unsigned int numBytes) {
 }
 
 void closeDevice() {
+  dwNumBytesToSend = 0;
+  dwNumBytesSent = 0;
+  dwNumBytesToRead = 0;
+  dwLowPinsValue = 0;
 #ifdef LIBFTDI
 
   if (ftdi != NULL) {

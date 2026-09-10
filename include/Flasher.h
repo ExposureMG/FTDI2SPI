@@ -30,7 +30,10 @@ void fixSB(unsigned char *blockdata);
 //                           drains the chip RX FIFO (MPSSE fills it at ~1 MB/s, the
 //                           driver empties it far faster), so this is bounded by the
 //                           host command buffer (OUTPUT_BUFFER_SIZE), not the ~4 KB
-//                           chip FIFO. Bigger = fewer per-batch stalls. 32 lands
+//                           chip FIFO. The libftdi backend internally splits these
+//                           requests into groups of at most seven pages so incoming
+//                           data fits the FIFO until the synchronous read starts.
+//                           Bigger = fewer per-batch stalls. 32 lands
 //                           ~20-22 s; try 64 for ~18-19 s. Drop to 7 if a setup ever
 //                           shows instability. 0x210-page commands ~= 4.9 KB each, so
 //                           keep nPages * 4.9 KB below OUTPUT_BUFFER_SIZE (512 KB).

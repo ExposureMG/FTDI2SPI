@@ -30,7 +30,8 @@ void reverse_array( unsigned char *buf, unsigned int size )
 
 void XSPIInit()
 {
-	spi_init();
+	if (!spi_init())
+		throw SpiTransportError("FTDI initialization failed");
 }
 
 void XSPIClose()

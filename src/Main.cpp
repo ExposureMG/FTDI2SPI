@@ -29,10 +29,31 @@ bool start_spi = false;
 bool stop = false;
 unsigned int eMMCblocks = 0;
 
+namespace {
+// These resources must be released even when a USB failure unwinds an operation.
+struct OperationResources {
+    unsigned char* buffer = nullptr;
+    FILE* file = nullptr;
+    ~OperationResources() {
+        if (file) fclose(file);
+        free(buffer);
+        closeDevice();
+    }
+};
+
+int ReportTransportError(const SpiTransportError& error) {
+    start_spi = false;
+    stop = true;
+    fprintf(stderr, "FTDI transfer failed: %s\n", error.what());
+    return SPI_TRANSPORT_ERROR;
+}
+} // namespace
+
 extern "C"
 {
-	FTDI2SPI_EXPORT int spi(int mode, int size, char* file, int startblock, int length) {
-		unsigned char* flash_xbox;
+	FTDI2SPI_EXPORT int spi(int mode, int size, char* file, int startblock, int length) try {
+		OperationResources resources;
+		unsigned char* flash_xbox = nullptr;
 		unsigned int addr_raw = 0;
 
 		unsigned int StartBlock = startblock * 32;
@@ -86,7 +107,6 @@ extern "C"
 		flashConfig = 0;
 		FlashDataInit((unsigned char*)&flashConfig);
 
-
 		unsigned char block[512];
 		const uint32_t num_blocks = /* set this to your eMMC's total blocks */ 98432;
 
@@ -132,14 +152,14 @@ extern "C"
 		//////////////////////////////////////////////////////////////////////////////////////////
 
 		else if (WriteEnable) {
-			FILE* fileW = fopen(FileName.c_str(), "rb");
+			FILE* fileW = resources.file = fopen(FileName.c_str(), "rb");
 
 			if (fileW == NULL) {
 				closeDevice();
 				return -8; // NO FILE
 			}
 
-			flash_xbox = (unsigned char*)malloc(block_flash_max * 528);
+			flash_xbox = resources.buffer = (unsigned char*)malloc(block_flash_max * 528);
 
 			if (flash_xbox == NULL) {
 				closeDevice();
@@ -176,9 +196,6 @@ extern "C"
 			}
 			//PRINT_BLOCKS;
 
-			fclose(fileW);
-			free(flash_xbox);
-
 			closeDevice();
 
 			if (stop) return -1;
@@ -188,13 +205,13 @@ extern "C"
 		//////////////////////////////////////////////////////////////////////////////////////////
 
 		else if (ReadEnable) {
-			FILE* fileR = fopen(FileName.c_str(), "wb");
+			FILE* fileR = resources.file = fopen(FileName.c_str(), "wb");
 			if (fileR == NULL) {
 				closeDevice();
 				return -8; // NO FILE
 			}
 
-			flash_xbox = (unsigned char*)malloc(block_flash_max * block_size);
+			flash_xbox = resources.buffer = (unsigned char*)malloc(block_flash_max * block_size);
 
 			if (flash_xbox == NULL) {
 				closeDevice();
@@ -239,8 +256,7 @@ extern "C"
 
 			if (stop) {
 				closeDevice();
-				fclose(fileR);
-				free(flash_xbox);
+
 				return -1;
 			}
 
@@ -259,8 +275,6 @@ extern "C"
 			}
 
 			//PRINT_BLOCKS;
-			fclose(fileR);
-			free(flash_xbox);
 
 			closeDevice();
 			return 0;
@@ -268,8 +282,11 @@ extern "C"
 
 		closeDevice();
 		return -10; // NO MODE
+	} catch (const SpiTransportError& error) {
+		return ReportTransportError(error);
 	}
-	FTDI2SPI_EXPORT int emmc_read(const char* file, int startblock, int length) {
+	FTDI2SPI_EXPORT int emmc_read(const char* file, int startblock, int length) try {
+		OperationResources resources;
 
 		if (!spi_init()) {
 			closeDevice();
@@ -287,14 +304,14 @@ extern "C"
 		const uint32_t StartBlock = startblock;
 		const uint32_t BlockCount = (length > 0) ? length : (total_blocks - StartBlock);
 
-		unsigned char* buffer = (unsigned char*)malloc(block_size);
+		unsigned char* buffer = resources.buffer = (unsigned char*)malloc(block_size);
 		if (!buffer) {
 			closeDevice();
 			return -9; // NO MEMORY
 		}
-		FILE* fout = fopen(file, "wb");
+		FILE* fout = resources.file = fopen(file, "wb");
 		if (!fout) {
-			free(buffer);
+
 			closeDevice();
 			return -8; // COULDN'T OPEN FILE
 		}
@@ -305,14 +322,12 @@ extern "C"
 			//printf("eMMC Block: %u\n", lba);
 		if (xbox_emmc_read_block(lba, buffer)!=0) {
 				printf("Failed to read block %u\n", lba);
-				fclose(fout);
-				free(buffer);
+
 				closeDevice();
 				return -20; // READ ERROR
 			}
 			if (fwrite(buffer, 1, block_size, fout) != block_size) {
-				fclose(fout);
-				free(buffer);
+
 				closeDevice();
 				return -21; // FILE WRITE ERROR
 			}
@@ -320,15 +335,17 @@ extern "C"
 		if (false) {
 			return -22; //DESELECT ERROR
 		}
-		fclose(fout);
-		free(buffer);
+
 		closeDevice();
 		return 0;
+	} catch (const SpiTransportError& error) {
+		return ReportTransportError(error);
 	}
-	FTDI2SPI_EXPORT int emmc_write(const char* file, int startblock) {
+	FTDI2SPI_EXPORT int emmc_write(const char* file, int startblock) try {
+		OperationResources resources;
 
 		const uint32_t block_size = 512;
-		unsigned char* buffer = (unsigned char*)malloc(block_size);
+		unsigned char* buffer = resources.buffer = (unsigned char*)malloc(block_size);
 
 		if (!spi_init()) {
 			closeDevice();
@@ -347,9 +364,9 @@ extern "C"
 			closeDevice();
 			return -9; // NO MEMORY
 		}
-		FILE* fin = fopen(file, "rb");
+		FILE* fin = resources.file = fopen(file, "rb");
 		if (!fin) {
-			free(buffer);
+
 			closeDevice();
 			return -8; // COULDN'T OPEN FILE
 		}
@@ -357,8 +374,7 @@ extern "C"
 		fseek(fin, 0, SEEK_END);
 		long filesize = ftell(fin);
 		if (filesize < 0) {
-			fclose(fin);
-			free(buffer);
+
 			closeDevice();
 			return -30; // FILE SIZE ERROR
 		}
@@ -369,8 +385,7 @@ extern "C"
 			size_t n = fread(buffer, 1, block_size, fin);
 			if (n != block_size) {
 				printf("File too short or read error at block %u\n", i);
-				fclose(fin);
-				free(buffer);
+
 				closeDevice();
 				return -21; // FILE READ ERROR
 			}
@@ -380,8 +395,7 @@ extern "C"
 			int ret = xbox_emmc_write_block(lba, buffer);
 			if (ret != 0) {
 				printf("Failed to write block %u\n", lba);
-				fclose(fin);
-				free(buffer);
+
 				closeDevice();
 				return -20; // WRITE ERROR
 			}
@@ -389,10 +403,11 @@ extern "C"
 		if (false) {
 			return -22; //DESELECT ERROR
 		}
-		fclose(fin);
-		free(buffer);
+
 		closeDevice();
 		return 0;
+	} catch (const SpiTransportError& error) {
+		return ReportTransportError(error);
 	}
 	FTDI2SPI_EXPORT int spiGetBlocks() {
 		if (start_spi) {

@@ -2,6 +2,8 @@
 
 #include "XSPI.h"
 #include <stdio.h>
+#include <algorithm>
+#include <stdexcept>
 
 bool XNANDWaitReady(unsigned int timeout)
 {
@@ -129,7 +131,8 @@ unsigned int XNANDWriteExecute(unsigned int block)
 // Fast batched read path (optimization)
 // ---------------------------------------------------------------------------
 
-// Read nPages consecutive physical pages in a single USB write + single USB read.
+// Read nPages consecutive physical pages in batches. libftdi splits requests
+// into at most seven pages per synchronous USB write/read pair.
 // Mirrors XNANDReadStart()+XNANDReadProcess() per page, but: status is cleared once
 // for the whole batch, the busy-poll is replaced by an in-stream delay, and all the
 // page commands/reads are queued before a single XSPIBatchReceive().
@@ -140,6 +143,22 @@ void XNANDReadBatch(unsigned char* pData, unsigned int startBlock,
                     unsigned int nPages, unsigned int wordsPerPage,
                     unsigned int delayBytes)
 {
+    if (nPages == 0) return;
+#ifdef LIBFTDI
+    // No USB IN transfers run during synchronous libftdi writes. Keep each
+    // response below the FT2232H FIFO size, including when callers request 32 pages.
+    if (wordsPerPage == 0 || wordsPerPage > 132)
+        throw std::invalid_argument("Invalid NAND page size");
+    if (nPages > 7) {
+        for (unsigned int page = 0; page < nPages;) {
+            const unsigned int count = std::min(7u, nPages - page);
+            XNANDReadBatch(pData, startBlock + page, count, wordsPerPage, delayBytes);
+            pData += count * wordsPerPage * 4;
+            page += count;
+        }
+        return;
+    }
+#endif
 	XNANDClearStatus();          // once per batch, not once per page
 
 	XSPIBatchBegin();

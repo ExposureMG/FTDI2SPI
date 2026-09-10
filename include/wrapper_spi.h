@@ -2,6 +2,16 @@
 #ifndef WRAPPER_H
 #define WRAPPER_H
 
+#include <stdexcept>
+
+// Transfer failures invalidate the device session. The exported operations
+// translate this exception into SPI_TRANSPORT_ERROR.
+class SpiTransportError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+constexpr int SPI_TRANSPORT_ERROR = -12;
+
 #ifdef LIBFTDI
   #ifdef _WIN32
     #include "stdafx.h"
@@ -36,7 +46,8 @@ void closeDevice();
 // whole NAND_READ_BATCH_PAGES batch of read commands fits in one queue (a 0x210
 // page costs ~4.9 KB of MPSSE commands, so 512 KB holds ~100 pages). The D2XX
 // driver background-drains the chip RX FIFO, so batch size is bounded by this
-// buffer, not the ~4 KB chip FIFO.
+// buffer, not the ~4 KB chip FIFO. libftdi reads are split into seven-page groups
+// in XNANDReadBatch because its synchronous writes do not drain the RX FIFO.
 #define OUTPUT_BUFFER_SIZE (512 * 1024)
 extern BYTE byOutputBuffer[OUTPUT_BUFFER_SIZE];
 extern DWORD dwNumBytesToSend;
