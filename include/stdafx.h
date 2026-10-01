@@ -23,9 +23,7 @@
 #define FTDI2SPI_EXPORT
 #endif
 
-// FTDI's native ftd2xx.h/WinTypes.h supplies the driver types (BYTE,
-// DWORD, etc.). Do not redefine them here: their ABI is platform specific.
-// No TCHAR APIs are currently used by this project.
+// FTDI's native ftd2xx.h/WinTypes.h supplies the driver types
 
 inline void Sleep(std::uint32_t milliseconds)
 {
@@ -38,9 +36,7 @@ inline void Sleep(std::uint32_t milliseconds)
 constexpr std::size_t _TRUNCATE = static_cast<std::size_t>(-1);
 constexpr int STRUNCATE = 80;
 
-// Buffer-size overload used for FTDI device descriptions. As with the CRT,
-// source and destination must not overlap. Invalid inputs return errno values
-// instead of invoking Microsoft's invalid-parameter handler.
+// Buffer-size overload used for FTDI device descriptions
 inline int strncpy_s(char* destination, std::size_t capacity,
                      const char* source, std::size_t count)
 {

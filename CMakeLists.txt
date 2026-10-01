@@ -57,6 +57,10 @@ if(WIN32)
     target_link_libraries(FTDI2SPI PRIVATE "${FTD2XX_LIB}")
 else()
     target_compile_definitions(FTDI2SPI PRIVATE LIBFTDI)
+    # libftdi 1.5 added re-attaching ftdi_sio on close. ftdi.h has no version macro.
+    if(LIBFTDI_VERSION VERSION_GREATER_EQUAL 1.5)
+        target_compile_definitions(FTDI2SPI PRIVATE LIBFTDI_REATTACH_SIO)
+    endif()
     target_link_libraries(FTDI2SPI PRIVATE PkgConfig::LIBFTDI Threads::Threads)
 endif()
 

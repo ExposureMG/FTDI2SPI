@@ -120,6 +120,10 @@ bool spi_init(void) {
     ftdi = ftdi_new();
     if (!ftdi) return false;
     Check(ftdi_set_interface(ftdi, INTERFACE_B) == 0, "ftdi_set_interface failed");
+#ifdef LIBFTDI_REATTACH_SIO
+    // Give interface B back to ftdi_sio when closeDevice() releases it.
+    ftdi->module_detach_mode = AUTO_DETACH_REATACH_SIO_MODULE; // (sic) libftdi 1.5
+#endif
     Check(ftdi_usb_open(ftdi, 0x0403, 0x6010) == 0, "ftdi_usb_open failed");
     ftdi->usb_read_timeout = TRANSFER_TIMEOUT_MS;
     ftdi->usb_write_timeout = TRANSFER_TIMEOUT_MS;
@@ -161,60 +165,51 @@ bool spi_init(void) {
     Check(FT_SetLatencyTimer(ftHandle, 1) == FT_OK, "FTDI latency timer failed");
 #endif
     BYTE cmd[3];
-    // Disable loopback (MPSSE command 0x85)
+    // Disable loopback
     cmd[0] = 0x85;
     WriteAll(cmd, 1);
 
-    // Enable divide-by-5 clocking (mirrors
-    // SPI_TurnOnDivideByFiveClockingHiSpeedDevice) 60 MHz / 5 / ((divisor + 1) *
-    // 2) = 6 MHz at divisor=0
+    // Enable divide by 5 clocking
     cmd[0] = 0x8B;
     WriteAll(cmd, 1);
 
-    // Set clock divisor = MAX_FREQ_CLOCK_DIVISOR (0)
+    // Set clock divisor
     cmd[0] = 0x86;
     cmd[1] = (MAX_FREQ_CLOCK_DIVISOR) & 0xFF;
     cmd[2] = ((MAX_FREQ_CLOCK_DIVISOR) >> 8) & 0xFF;
     WriteAll(cmd, 3);
 
-    // Disable divide-by-5 clocking (mirrors
-    // SPI_TurnOffDivideByFiveClockingHiSpeedDevice) 60 MHz / ((divisor + 1) * 2)
-    // = 30 MHz at divisor=0
+    // Disable divide by 5 clocking
     cmd[0] = 0x8A;
     WriteAll(cmd, 1);
 
-    // Set clock divisor again with divide-by-5 off
+    // Set clock divisor again with divide by 5 off
     cmd[0] = 0x86;
     cmd[1] = (MAX_FREQ_CLOCK_DIVISOR) & 0xFF;
     cmd[2] = ((MAX_FREQ_CLOCK_DIVISOR) >> 8) & 0xFF;
     WriteAll(cmd, 3);
 
-    // Configure low byte (ADBUS) pins:
-    //   ADBUS0 = SK  (output)
-    //   ADBUS1 = DO  (output)
-    //   ADBUS2 = DI  (input)
-    //   ADBUS3 = CS  (output, deasserted high)
-    //   ADBUS4-7 = GPIOL1-4 (output, low)
-    // Direction byte: 0xFB = 1111_1011 (all output except DI/ADBUS2)
+    // Configure low byte ADBUS pins
     dwLowPinsValue = 0x08; // CS deasserted (high), SK/DO/GPIOL1-4 low
     cmd[0] = SET_LOW_BYTE_DATA_BITS_CMD; // 0x80
     cmd[1] = dwLowPinsValue;
     cmd[2] = 0xFB;
     WriteAll(cmd, 3);
 
-    // Configure high byte (ACBUS) pins:
-    //   ACBUS0 (Pin1) = output, low
-    //   ACBUS1 (Pin2) = output, high
-    //   ACBUS2-7    = input, low
-    // Direction byte: 0x03 (ACBUS0+ACBUS1 output), value: 0x02 (ACBUS1 high)
+    // Configure highbyte ACBUS pins
     cmd[0] = SET_HIGH_BYTE_DATA_BITS_CMD; // 0x82
     cmd[1] = 0x02;
     cmd[2] = 0x03;
     WriteAll(cmd, 3);
 
     return true;
-  } catch (const SpiTransportError&) {
+  } catch (const SpiTransportError& error) {
     // TransferFailure has already released the device and pending commands.
+#ifdef LIBFTDI
+    fprintf(stderr, "FTDI init failed: %s\n", error.what());
+#else
+    (void)error;
+#endif
     return false;
   }
 }
@@ -230,9 +225,8 @@ void AddByteToOutputBuffer(BYTE DataByte, bool bClearOutputBuffer) {
   if (bClearOutputBuffer)
     dwNumBytesToSend = 0;
 
-  // Guard the (previously unchecked) staging buffer. With a correctly sized
-  // OUTPUT_BUFFER_SIZE this never trips; it turns a batch sized too large for
-  // the buffer into a dropped byte instead of a heap overrun.
+  // Guard the staging buffer
+  // With a correctly sized output buffer this never trips
   if (dwNumBytesToSend < OUTPUT_BUFFER_SIZE)
     byOutputBuffer[dwNumBytesToSend++] = DataByte;
 }

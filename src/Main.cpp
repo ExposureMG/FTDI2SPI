@@ -47,6 +47,14 @@ int ReportTransportError(const SpiTransportError& error) {
     fprintf(stderr, "FTDI transfer failed: %s\n", error.what());
     return SPI_TRANSPORT_ERROR;
 }
+
+// Any other exception must not cross the C ABI either.
+int ReportOperationError(const std::exception& error) {
+    start_spi = false;
+    stop = true;
+    fprintf(stderr, "FTDI operation failed: %s\n", error.what());
+    return SPI_TRANSPORT_ERROR;
+}
 } // namespace
 
 extern "C"
@@ -284,6 +292,8 @@ extern "C"
 		return -10; // NO MODE
 	} catch (const SpiTransportError& error) {
 		return ReportTransportError(error);
+	} catch (const std::exception& error) {
+		return ReportOperationError(error);
 	}
 	FTDI2SPI_EXPORT int emmc_read(const char* file, int startblock, int length) try {
 		OperationResources resources;
@@ -340,6 +350,8 @@ extern "C"
 		return 0;
 	} catch (const SpiTransportError& error) {
 		return ReportTransportError(error);
+	} catch (const std::exception& error) {
+		return ReportOperationError(error);
 	}
 	FTDI2SPI_EXPORT int emmc_write(const char* file, int startblock) try {
 		OperationResources resources;
@@ -408,6 +420,8 @@ extern "C"
 		return 0;
 	} catch (const SpiTransportError& error) {
 		return ReportTransportError(error);
+	} catch (const std::exception& error) {
+		return ReportOperationError(error);
 	}
 	FTDI2SPI_EXPORT int spiGetBlocks() {
 		if (start_spi) {

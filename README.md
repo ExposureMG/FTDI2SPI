@@ -38,3 +38,9 @@ CMake discovers libftdi through `pkg-config`; no Windows D2XX headers or binarie
 are used. If installed in a custom prefix, set `PKG_CONFIG_PATH` to the directory
 containing `libftdi1.pc`. Both the SPI/NAND and ISD2100 paths use libftdi.
 The `extern/libftdi` and `extern/libusb` submodules are not needed for this build.
+
+Device selection opens the first matching device; connect only one programmer.
+D2XX picks the first device whose description ends in `" B"` (channel B; the
+ISD2100 path requires exactly `Dual RS232-HS B`). libftdi picks the first device
+with VID `0x0403` / PID `0x6010` (FT2232H) and opens interface B, so an FT4232H
+(PID `0x6011`) is accepted by D2XX but not by libftdi.

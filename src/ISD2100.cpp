@@ -58,7 +58,7 @@ void print_usage(const char* program_name) {
 }
 
 void list_ftdi_devices() {
-#ifndef _WIN32
+#ifdef LIBFTDI
     auto* context = ftdi_new();
     if (!context) return;
     ftdi_device_list* devices = nullptr;
@@ -118,19 +118,16 @@ void list_ftdi_devices() {
 #endif
 }
 
-// [Include all the SPI functions from your code here]
 void MPSSE_SetClock(FT_HANDLE ftHandle, unsigned int freqHz) {
 	BYTE cmd[3];
 	DWORD bytesWritten;
 
-	// Limit to max frequency
 	if (freqHz > MAX_CLOCK_HZ) {
 		printf("Warning: Requested frequency %u Hz exceeds max %u Hz, limiting to max\n",
 			freqHz, MAX_CLOCK_HZ);
 		freqHz = MAX_CLOCK_HZ;
 	}
 
-	// Calculate divisor: Clock = 60MHz / ((divisor + 1) * 2)
 	unsigned int divisor = (30000000 / freqHz) - 1;
 	if (divisor > 0xFFFF) divisor = 0xFFFF;
 
@@ -139,7 +136,6 @@ void MPSSE_SetClock(FT_HANDLE ftHandle, unsigned int freqHz) {
 	cmd[2] = (divisor >> 8) & 0xFF; // ValueH
 	FT_Write(ftHandle, cmd, 3, &bytesWritten);
 
-	// Calculate actual frequency (due to integer division)
 	g_currentFreqHz = 60000000 / ((divisor + 1) * 2);
 
 	printf("Set MPSSE clock to %u Hz (%.2f MHz)\n",
@@ -150,7 +146,7 @@ void WritePins(FT_HANDLE ftHandle, BYTE pins) {
 	BYTE cmd[3];
 	DWORD bytesWritten;
 
-	cmd[0] = 0x80;  // Set Data Bits Low Byte
+	cmd[0] = 0x80; // Set Data Bits Low Byte
 	cmd[1] = pins;  // Value
 	cmd[2] = OUTPUT_PINS;  // Direction
 
@@ -164,9 +160,19 @@ void SPI_Select(FT_HANDLE ftHandle, bool inactive) {
 	Sleep(1);  // Keep small delay for chip select timing
 }
 
+static bool ReadPinStates(FT_HANDLE ftHandle, BYTE* data, DWORD size, const char* caller) {
+	DWORD bytesRead = 0;
+	if (FT_Read(ftHandle, data, size, &bytesRead) == FT_OK && bytesRead == size)
+		return true;
+	printf("Error: %s read %lu of %lu bytes\n", caller,
+		(unsigned long)bytesRead, (unsigned long)size);
+	FT_Purge(ftHandle, FT_PURGE_RX);
+	return false;
+}
+
 BYTE SPI_Transfer(FT_HANDLE ftHandle, BYTE dataOut) {
 	BYTE cmd[96];
-	DWORD bytesWritten, bytesRead;
+	DWORD bytesWritten;
 	BYTE dataIn = 0;
 	BYTE readData[8];
 	int cmdIdx = 0;
@@ -188,7 +194,7 @@ BYTE SPI_Transfer(FT_HANDLE ftHandle, BYTE dataOut) {
 		cmd[cmdIdx++] = OUTPUT_PINS;
 
 		// Read MISO on falling edge
-		cmd[cmdIdx++] = 0x81;  // Read Data Bits Low
+		cmd[cmdIdx++] = 0x81; // Read Data Bits Low
 
 		// SCK high again
 		cmd[cmdIdx++] = 0x80;
@@ -202,8 +208,9 @@ BYTE SPI_Transfer(FT_HANDLE ftHandle, BYTE dataOut) {
 	// Execute all commands
 	FT_Write(ftHandle, cmd, cmdIdx, &bytesWritten);
 
-	// Read 8 pin states
-	FT_Read(ftHandle, readData, 8, &bytesRead);
+	// Read 8 pin states; on failure return 0xFF, as an idle (pulled-up) MISO would
+	if (!ReadPinStates(ftHandle, readData, 8, "SPI_Transfer"))
+		return 0xFF;
 
 	// Extract MISO bits (read on falling edge)
 	for (int bit = 7; bit >= 0; bit--) {
@@ -246,7 +253,7 @@ void SPI_SendCommand(FT_HANDLE ftHandle, BYTE* cmdBytes, int len) {
 bool WaitForReady(FT_HANDLE ftHandle, int timeoutMs) {
 	BYTE cmd[2];
 	BYTE pinState;
-	DWORD bytesWritten, bytesRead;
+	DWORD bytesWritten;
 	int waited = 0;
 
 	// Quick checks first
@@ -254,7 +261,8 @@ bool WaitForReady(FT_HANDLE ftHandle, int timeoutMs) {
 		cmd[0] = 0x81;  // Read Data Bits Low
 		cmd[1] = 0x87;  // Send immediate
 		FT_Write(ftHandle, cmd, 2, &bytesWritten);
-		FT_Read(ftHandle, &pinState, 1, &bytesRead);
+		if (!ReadPinStates(ftHandle, &pinState, 1, "WaitForReady"))
+			return false;
 
 		if (pinState & PIN_RDY) return true;
 	}
@@ -264,7 +272,8 @@ bool WaitForReady(FT_HANDLE ftHandle, int timeoutMs) {
 		cmd[0] = 0x81;
 		cmd[1] = 0x87;
 		FT_Write(ftHandle, cmd, 2, &bytesWritten);
-		FT_Read(ftHandle, &pinState, 1, &bytesRead);
+		if (!ReadPinStates(ftHandle, &pinState, 1, "WaitForReady"))
+			return false;
 
 		if (pinState & PIN_RDY) return true;
 		Sleep(1);
@@ -572,7 +581,7 @@ void SPI_SendPacket(FT_HANDLE ftHandle, BYTE* data, int length) {
 // Read multiple bytes without waiting between each
 void SPI_ReadPacket(FT_HANDLE ftHandle, BYTE* buffer, int length) {
 	BYTE cmd[2048];
-	DWORD bytesWritten, bytesRead;
+	DWORD bytesWritten;
 	int cmdIdx = 0;
 
 	BYTE ssState = g_currentSSState;
@@ -607,7 +616,11 @@ void SPI_ReadPacket(FT_HANDLE ftHandle, BYTE* buffer, int length) {
 		return;
 	}
 
-	FT_Read(ftHandle, pinStates, length * 8, &bytesRead);
+	if (!ReadPinStates(ftHandle, pinStates, length * 8, "SPI_ReadPacket")) {
+		memset(buffer, 0xFF, length);
+		free(pinStates);
+		return;
+	}
 
 	// Extract bytes
 	for (int byteIdx = 0; byteIdx < length; byteIdx++) {
@@ -759,7 +772,7 @@ int getPercentage() {
 }	
 // Alternative: Open by description string
 FT_HANDLE OpenFTDIByDescription(const char* description) {
-#ifndef _WIN32
+#ifdef LIBFTDI
     return ISD_OpenByDescription(description);
 #else
 	FT_HANDLE ftHandle;

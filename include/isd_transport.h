@@ -1,8 +1,6 @@
 #pragma once
 
-// The subset of D2XX used by the legacy ISD2100 implementation. Keep its
-// command generation independent of the host's driver API.
-#ifdef _WIN32
+#ifndef LIBFTDI
 #include "ftd2xx.h"
 #else
 #include <ftdi.h>
@@ -41,7 +39,7 @@ inline FT_STATUS FT_Read(FT_HANDLE handle, void* data, DWORD size, DWORD* receiv
     FT_STATUS status = FT_OK;
     while (*received < size) {
         const auto now = std::chrono::steady_clock::now();
-        if (now >= deadline) { status = -1; break; }
+        if (now >= deadline) break;
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
         handle->usb_read_timeout = static_cast<int>(std::max<long long>(1, ms));
         const auto count = std::min<DWORD>(size - *received, 65536);
@@ -79,7 +77,7 @@ inline FT_STATUS FT_Close(FT_HANDLE h) {
 inline FT_HANDLE ISD_OpenByDescription(const char* description) {
     if (!description) return nullptr;
     std::string product(description);
-    // D2XX appends the interface letter to the USB product string; libftdi
+    // D2XX appends the interface letter to the USB product string, libftdi
     // takes the interface separately and matches the original product string.
     ftdi_interface channel = INTERFACE_A;
     if (product.size() >= 2 && product[product.size() - 2] == ' ' &&
@@ -89,6 +87,9 @@ inline FT_HANDLE ISD_OpenByDescription(const char* description) {
     }
     auto* handle = ftdi_new();
     if (!handle) return nullptr;
+#ifdef LIBFTDI_REATTACH_SIO
+    handle->module_detach_mode = AUTO_DETACH_REATACH_SIO_MODULE; // (sic) libftdi 1.5
+#endif
     if (ftdi_set_interface(handle, channel) < 0 ||
         ftdi_usb_open_desc(handle, 0x0403, 0x6010, product.c_str(), nullptr) < 0) {
         ftdi_free(handle);
